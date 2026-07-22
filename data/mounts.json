@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "popis": "Nosnost mountů v kg. Vstup pro výpočet, kolik nákladu se vejde na jednu cestu.",
+    "zdroj": "Mirek / wiki.albiononline.com/wiki/Max_Load, předáno 2026-07-22",
+    "duveryhodnost": "komunitní — v herních datech (items.xml, spells.xml) tyto hodnoty NEJSOU, atribut maxload je všude 0, jde o server-side konfiguraci",
+    "poznamka_k_overeni": "Elder's Transport Mammoth = 41162 je přesně 10x Elder's Transport Ox (4116) — podezření na chybu v přepisu. Označeno priznakem 'overit'. Do ověření ve hře s ním nepočítat.",
+    "kontext": "Teleport mezi městy je mimo rozsah projektu — Mirek 2026-07-22: 'teleport se nikdy nevyplatí, vždy se bude běhat pěšky'. Nosnost mountu je proto JEDINÝ limit na objem jedné zásilky."
+  },
+
+  "mounty": [
+    { "nazev": "Novice's Mule",              "kg": 60,    "kategorie": "ostatni" },
+
+    { "nazev": "Journeyman's Riding Horse",  "kg": 157,   "kategorie": "kun" },
+    { "nazev": "Adept's Riding Horse",       "kg": 233,   "kategorie": "kun" },
+    { "nazev": "Expert's Riding Horse",      "kg": 268,   "kategorie": "kun" },
+    { "nazev": "Master's Riding Horse",      "kg": 314,   "kategorie": "kun" },
+    { "nazev": "Grandmaster's Riding Horse", "kg": 358,   "kategorie": "kun" },
+    { "nazev": "Elder's Riding Horse",       "kg": 412,   "kategorie": "kun" },
+    { "nazev": "Bonehorse",                  "kg": 246,   "kategorie": "kun" },
+    { "nazev": "Spectral Bonehorse",         "kg": 398,   "kategorie": "kun" },
+
+    { "nazev": "Journeyman's Transport Ox",  "kg": 1569,  "kategorie": "transport" },
+    { "nazev": "Adept's Transport Ox",       "kg": 2231,  "kategorie": "transport" },
+    { "nazev": "Expert's Transport Ox",      "kg": 2676,  "kategorie": "transport" },
+    { "nazev": "Master's Transport Ox",      "kg": 3148,  "kategorie": "transport" },
+    { "nazev": "Grandmaster's Transport Ox", "kg": 3583,  "kategorie": "transport" },
+    { "nazev": "Elder's Transport Ox",       "kg": 4116,  "kategorie": "transport" },
+    { "nazev": "Elder's Command Mammoth",    "kg": 3977,  "kategorie": "transport" },
+    { "nazev": "Elder's Transport Mammoth",  "kg": 41162, "kategorie": "transport", "overit": true },
+
+    { "nazev": "Saddled Swamp Salamander",   "kg": 246,   "kategorie": "ostatni" },
+    { "nazev": "Recruiter's Saddled Bat",    "kg": 157,   "kategorie": "ostatni" },
+    { "nazev": "Recruiter's Toad",           "kg": 157,   "kategorie": "ostatni" },
+    { "nazev": "Recruiter's Giant Frog",     "kg": 157,   "kategorie": "ostatni" },
+    { "nazev": "Recruiter's Ram",            "kg": 320,   "kategorie": "ostatni" },
+    { "nazev": "Yule Ram",                   "kg": 320,   "kategorie": "ostatni" },
+    { "nazev": "Pest Lizard",                "kg": 358,   "kategorie": "ostatni" },
+    { "nazev": "Adept's Giant Stag",         "kg": 465,   "kategorie": "ostatni" },
+    { "nazev": "Frost Ram",                  "kg": 594,   "kategorie": "ostatni" },
+    { "nazev": "Saddled Wild Boar",          "kg": 739,   "kategorie": "ostatni" },
+    { "nazev": "Saddled Swamp Dragon",       "kg": 1075,  "kategorie": "ostatni" },
+    { "nazev": "Saddled Winter Bear",        "kg": 1231,  "kategorie": "ostatni" },
+    { "nazev": "Saddled Direboar",           "kg": 1252,  "kategorie": "ostatni" },
+    { "nazev": "Spectral Direboar",          "kg": 1252,  "kategorie": "ostatni" },
+    { "nazev": "Saddled Bighorn Ram",        "kg": 1969,  "kategorie": "ostatni" },
+    { "nazev": "Grizzly Bear",               "kg": 2146,  "kategorie": "ostatni" },
+    { "nazev": "Saddled Direbear",           "kg": 2469,  "kategorie": "ostatni" },
+    { "nazev": "Flame Basilisk",             "kg": 3311,  "kategorie": "ostatni" },
+    { "nazev": "Venom Basilisk",             "kg": 3311,  "kategorie": "ostatni" }
+  ]
+}

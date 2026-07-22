@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+
+# Dočasné soubory generátoru (atomický zápis)
+*.tmp
+
+# POZOR: jadro/data/hra.json se VERZUJE ZÁMĚRNĚ.
+# Build nesmí záviset na síti — viz docs/f1-plan.md, vada 2.

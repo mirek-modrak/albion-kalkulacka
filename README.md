@@ -1,0 +1,101 @@
+# Albion kalkulačka
+
+Nástroj pro výpočet čistého zisku v Albion Online — refining, crafting
+a převoz. Cílem je odpovědět na otázku **„kde se právě teď nejvíc vydělá?"**
+
+---
+
+## Rychlý start
+
+```bash
+npm install
+npm test
+```
+
+Prototyp (funkční, ověřený): otevři [prototyp.html](prototyp.html) dvojklikem.
+Nic se neinstaluje, ceny si tahá sám z AODP.
+
+---
+
+## Struktura
+
+```
+jadro/          herní matematika — čisté funkce, BEZ závislostí
+  src/          typy, identita položek, bonusy, recepty, výpočet
+  data/         hra.json — vygenerovaná herní data (VERZOVÁNO)
+  test/         zlaté vektory
+nastroje/       generátor herních dat z ao-bin-dumps
+docs/           průzkum, architektura, funkční specifikace
+prototyp.html   samostatný prototyp refiningu
+```
+
+**Proč je jádro oddělené:** herní vzorce jsou subtilní a jediné místo, kde
+tichá chyba znehodnotí úplně všechno. Oddělené jádro jde otestovat bez
+klikání a použije ho webová aplikace i (později) služba na pozadí — takže
+vzorce existují jen jednou.
+
+---
+
+## Příkazy
+
+| Příkaz | Co dělá |
+|---|---|
+| `npm test` | zlaté vektory (119 testů) |
+| `npm run kontrola` | typová kontrola |
+| `npm run generuj` | **znovu stáhne herní data** z ao-bin-dumps |
+
+### Kdy spustit `npm run generuj`
+
+Jen když vyjde herní patch, který mění receptury nebo konstanty.
+**Není součástí buildu** — vygenerovaný `hra.json` je v repozitáři, aby
+šlo sestavit aplikaci offline a výpadek GitHubu neshodil nasazení.
+
+Po regeneraci **vždy spusť testy**. Zlaté vektory odhalí, jestli se změnila
+čísla, se kterými počítáme. Když spadnou, něco se změnilo ve hře —
+není to důvod „opravit test".
+
+Generátor zapisuje SHA commitu do `hra.json`, takže jde kdykoli dohledat,
+z jakých dat výsledek vznikl.
+
+---
+
+## Zdroje dat
+
+| Co | Odkud | Poznámka |
+|---|---|---|
+| Receptury, bonusy, konstanty | [ao-data/ao-bin-dumps](https://github.com/ao-data/ao-bin-dumps) | data přímo z klienta hry |
+| Tržní ceny a historie | [Albion Online Data Project](https://www.albion-online-data.com/) | crowdsourcované — **mohou být stará** |
+
+⚠️ Ceny z AODP sbírají hráči vlastním klientem, takže existují jen pro to,
+co si někdo nedávno otevřel v tržnici. Každá cena nese časovou značku
+a ta se **musí** kontrolovat.
+
+---
+
+## Dokumentace
+
+| Dokument | O čem je |
+|---|---|
+| [funkcni-specifikace.md](docs/funkcni-specifikace.md) | co to má umět — scénáře S1–S8 |
+| [architektura-rozhodnuti.md](docs/architektura-rozhodnuti.md) | 11 rozhodnutí a jejich zdůvodnění |
+| [architektura.md](docs/architektura.md) | vrstvy a datový model |
+| [vyzkum-01-mechaniky.md](docs/vyzkum-01-mechaniky.md) | herní mechaniky, daně, bonusy |
+| [vyzkum-02-herni-data.md](docs/vyzkum-02-herni-data.md) | receptury z herních dat |
+| [vyzkum-03-konstanty.md](docs/vyzkum-03-konstanty.md) | konstanty z `gamedata.xml` |
+| [f1-plan.md](docs/f1-plan.md) | plán a oponentura fáze F1 |
+| [todo.md](docs/todo.md) | otevřené otázky |
+
+---
+
+## Stav
+
+| Fáze | Co | Stav |
+|---|---|---|
+| F1 | `jadro/` + zlaté vektory + generátor | ✅ hotovo |
+| F2 | web — sken surovin | další na řadě |
+| F3 | detail položky | |
+| F4 | sken předmětů po kategoriích | |
+| F5 | srovnání měst, zisk/kg, nosnost mountu | |
+| F6 | koupit vs. vyrobit | |
+| F7 | nasazení na VPS | |
+| F8 | hlídání a upozornění | |

@@ -1,0 +1,10 @@
+{
+  "name": "@albion/nastroje",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generátor herních dat z ao-data/ao-bin-dumps. Nespouští se při buildu.",
+  "dependencies": {
+    "fast-xml-parser": "^4.5.0"
+  }
+}

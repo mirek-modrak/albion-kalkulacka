@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Albion — kalkulačka refiningu (prototyp)</title>
+<style>
+  :root {
+    --bg: #14161a;  --panel: #1c1f26;  --line: #2c313b;
+    --text: #e6e8ec; --dim: #98a0ae;   --accent: #6ea8fe;
+    --ok: #5ec98a;   --warn: #e8b84b;  --bad: #e8695f;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8; --panel: #fff; --line: #dde1e8;
+      --text: #1a1d23; --dim: #5d6674; --accent: #2563eb;
+      --ok: #197f4a; --warn: #9a6b00; --bad: #b3352b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 20px; }
+  .wrap { display: grid; grid-template-columns: 340px 1fr; gap: 20px; max-width: 1100px; }
+  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+              color: var(--dim); margin: 0 0 14px; font-weight: 600; }
+  label { display: block; font-size: 13px; color: var(--dim); margin: 12px 0 4px; }
+  label:first-of-type { margin-top: 0; }
+  select, input[type=number] {
+    width: 100%; padding: 8px 10px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; font: inherit;
+  }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; min-width: 0; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 14px; color: var(--text); }
+  .check input { width: auto; }
+  button {
+    width: 100%; margin-top: 16px; padding: 10px; border: 0; border-radius: 6px;
+    background: var(--accent); color: #fff; font: 600 15px/1 inherit; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  button.secondary { background: transparent; color: var(--accent);
+                     border: 1px solid var(--accent); margin-top: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.head td { color: var(--dim); font-size: 12px; text-transform: uppercase;
+               letter-spacing: .05em; padding-top: 16px; border-bottom: 0;
+               text-align: left; }
+  tr.total td { font-weight: 700; font-size: 17px; border-bottom: 0; padding-top: 12px; }
+  .note { font-size: 12px; color: var(--dim); }
+  .rrrbox { margin-top: 16px; padding: 12px 14px; border-radius: 8px;
+            background: var(--bg); border: 1px solid var(--line); }
+  .rrrval { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .rrrval small { font-size: 12px; font-weight: 400; color: var(--dim); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .stale { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+           border: 1px solid currentColor; margin-left: 6px; }
+  .empty { color: var(--dim); font-size: 14px; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Albion — kalkulačka refiningu</h1>
+<div class="sub">Prototyp na ověření matematiky. Ceny živě z Albion Online Data Project.</div>
+
+<div class="wrap">
+
+  <div class="panel">
+    <h2>Vstupy</h2>
+
+    <label>Server</label>
+    <select id="server">
+      <option value="west">Americas (west)</option>
+      <option value="europe">Europe</option>
+      <option value="east">Asia (east)</option>
+    </select>
+
+    <label>Surovina</label>
+    <select id="linka"></select>
+
+    <div class="row">
+      <div>
+        <label>Tier</label>
+        <select id="tier"></select>
+      </div>
+      <div>
+        <label>Enchant</label>
+        <select id="ench"></select>
+      </div>
+    </div>
+
+    <label>Město (nákup, refining i prodej)</label>
+    <select id="mesto"></select>
+
+    <label>Denní bonus</label>
+    <select id="denni">
+      <option value="0">žádný</option>
+      <option value="10">silver day (+10)</option>
+      <option value="20">gold day (+20)</option>
+    </select>
+
+    <div class="check"><input type="checkbox" id="focus"><label for="focus" style="margin:0">Používám focus (+59)</label></div>
+    <div class="check"><input type="checkbox" id="premium" checked><label for="premium" style="margin:0">Mám premium (daň 4 % místo 8 %)</label></div>
+
+    <div class="rrrbox">
+      <div class="rrrval" id="rrrZobrazeni">—</div>
+      <div class="note" id="rrrRozpad"></div>
+      <div class="check" style="margin:10px 0 0">
+        <input type="checkbox" id="rrrRucne">
+        <label for="rrrRucne" style="margin:0; font-size:13px">Zadat return rate ručně</label>
+      </div>
+      <input type="number" id="rrrHodnota" min="0" max="99" step="0.1"
+             style="display:none; margin-top:6px" placeholder="např. 36.7">
+    </div>
+
+    <label>Poplatek stanice (silver / 100 nutrition)</label>
+    <input type="number" id="poplatek" value="200" min="0" step="10">
+
+    <label>Počet kusů k výrobě</label>
+    <input type="number" id="pocet" value="100" min="1" step="1">
+
+    <label>Jak nakupuji suroviny</label>
+    <select id="rezimNakup">
+      <option value="instant">hned ze sell orderů (dráž, bez čekání)</option>
+      <option value="order">přes buy order (levněji, + 2,5 % setup fee)</option>
+    </select>
+
+    <label>Jak prodávám výsledek</label>
+    <select id="rezimProdej">
+      <option value="order">přes sell order (dráž, + 2,5 % setup fee)</option>
+      <option value="instant">hned do buy orderů (levněji, bez setup fee)</option>
+    </select>
+
+    <h2 style="margin-top:24px; padding-top:18px; border-top:1px solid var(--line)">
+      Ceny — silver za kus
+    </h2>
+
+    <button id="nacist" class="secondary">Předvyplnit živými cenami z AODP</button>
+    <div id="stav" class="note" style="margin:8px 0 4px"></div>
+
+    <label id="lblRaw">Nákup — raw surovina</label>
+    <input type="number" id="cenaRaw" min="0" step="1" placeholder="zadej ručně nebo načti">
+    <div id="ageRaw" class="note"></div>
+
+    <div id="blokNizsi">
+      <label id="lblNizsi">Nákup — refined o tier níž</label>
+      <input type="number" id="cenaNizsi" min="0" step="1" placeholder="zadej ručně nebo načti">
+      <div id="ageNizsi" class="note"></div>
+    </div>
+
+    <label id="lblProdej">Prodej — hotový produkt</label>
+    <input type="number" id="cenaProdej" min="0" step="1" placeholder="zadej ručně nebo načti">
+    <div id="ageProdej" class="note"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Rozpad výpočtu</h2>
+    <div id="vysledek" class="empty">Vyplň vstupy vlevo a klikni na tlačítko.</div>
+  </div>
+
+</div>
+
+<script>
+/* ==========================================================================
+   ČÁST 1 — KONSTANTY
+   Vše ověřené z herních dat (ao-data/ao-bin-dumps, staženo 2026-07-22).
+   Záměrně pohromadě a pojmenované: při patchi se mění tady, nikde jinde.
+   Viz docs/vyzkum-01..03.
+   ========================================================================== */
+
+const K = {
+  // gamedata.xml → <MarketPlace><TaxValues>
+  setupFee:            0.025,   // platí se i u buy orderu, i když se nevyplní
+  danNormalni:         0.08,
+  danPremium:          0.04,    // v gamedata.xml NENÍ, jen z wiki → konfigurovatelné
+  minimalniDan:        1,       // silver; daň nikdy neklesne pod tuto hodnotu
+
+  // craftingmodifiers.xml
+  bonusMesta:          18,      // <refiningbonus value="0.18">
+  bonusSpecializace:   40,      // <craftingmodifier name="ore" value="0.40">
+  // gamedata.xml → <ActionFocus><CraftingEfficiency bonus="0.59">
+  bonusFocus:          59,
+
+  // Nutrition = ItemValue × koeficient. Dev post Lands Awakened 11/2021,
+  // v herních datech NENÍ → konfigurovatelné. Viz docs/todo.md.
+  nutritionKoef:       0.1125,
+};
+
+// items.xml — poměry refiningu. Platí shodně pro všech 5 linek.
+// Pozor: posloupnost NENÍ lineární (T4 = 2 stejně jako T3, T8 = 5 stejně jako T7).
+const RAW_NA_KUS = { 2:1, 3:2, 4:2, 5:3, 6:4, 7:5, 8:5 };
+
+// items.xml — itemvalue refined suroviny při enchantu 0. Každý enchant ji zdvojnásobí.
+const ITEM_VALUE = { 2:4, 3:8, 4:16, 5:32, 6:64, 7:128, 8:256 };
+
+// items.xml — craftingfocus. Klíčem je EFEKTIVNÍ úroveň = tier + enchant.
+// (T4.1 stojí stejně jako T5.0 — ověřeno v datech.)
+// Až do 12 = T8 s enchantem .4, což je nejdražší možná kombinace.
+const FOCUS_COST = { 2:18, 3:31, 4:54, 5:94, 6:164, 7:287, 8:503,
+                     9:880, 10:1539, 11:2694, 12:4714 };
+
+// Nejvyšší enchant. V herních datech existuje _LEVEL4 pro T4–T8
+// u všech linek KROMĚ kamene. Ověřeno v items.xml 2026-07-22.
+const MAX_ENCHANT = 4;
+
+// items.xml — váha kusu v kg. Shodná pro raw i refined, enchant ji nemění.
+const VAHA = { 2:0.23, 3:0.34, 4:0.51, 5:0.76, 6:1.14, 7:1.71, 8:2.56 };
+
+// items.xml — interní ID. Pozor: kategorie bonusu je "rock", ne "stone".
+// "koho/co" = 4. pád, používá se ve větě "bonus na …"
+const LINKY = {
+  ore:   { nazev: "Ruda → ingoty",  koho: "rudu",   raw: "ORE",   refined: "METALBAR",   enchantovatelna: true  },
+  hide:  { nazev: "Kůže → leather", koho: "kůži",   raw: "HIDE",  refined: "LEATHER",    enchantovatelna: true  },
+  fiber: { nazev: "Vlákno → látka", koho: "vlákno", raw: "FIBER", refined: "CLOTH",      enchantovatelna: true  },
+  wood:  { nazev: "Dřevo → prkna",  koho: "dřevo",  raw: "WOOD",  refined: "PLANKS",     enchantovatelna: true  },
+  rock:  { nazev: "Kámen → bloky",  koho: "kámen",  raw: "ROCK",  refined: "STONEBLOCK", enchantovatelna: false },
+};
+
+// craftingmodifiers.xml — které město má specializaci na kterou surovinu.
+const MESTA = {
+  "Thetford":     "ore",
+  "Lymhurst":     "fiber",
+  "Bridgewatch":  "rock",
+  "Martlock":     "hide",
+  "Fort Sterling":"wood",
+  "Caerleon":     null,
+  "Brecilien":    null,
+};
+
+
+/* ==========================================================================
+   ČÁST 2 — VÝPOČET (čisté funkce)
+
+   Žádná z těchto funkcí nesahá na stránku ani na síť. Dostane čísla,
+   vrátí čísla. Díky tomu se dají později přesunout na server nebo otestovat
+   beze změny — což je celý smysl toho, že jsou oddělené.
+   ========================================================================== */
+
+/** Součet všech bonusů → jedno číslo "production bonus". Bonusy jsou ADITIVNÍ. */
+function productionBonus({ mestoMaSpecializaci, focus, denniBonus }) {
+  return K.bonusMesta
+       + (mestoMaSpecializaci ? K.bonusSpecializace : 0)
+       + (focus ? K.bonusFocus : 0)
+       + denniBonus;
+}
+
+/**
+ * Return rate ze součtu bonusů.
+ *   RRR = 1 − 1/(1 + bonus/100) = bonus/(100 + bonus)
+ * Nikdy nedosáhne 100 %, jen se k nim blíží.
+ */
+function returnRate(bonus) {
+  return bonus / (100 + bonus);
+}
+
+/** Recept na 1 kus: kolik raw a kolik refined o tier níž. */
+function recept(tier, ench) {
+  const raw = RAW_NA_KUS[tier];
+  if (tier === 2) return { raw, nizsiRefined: 0, nizsiEnch: 0 };
+  // T4 s enchantem bere NEenchantovaný T3 refined — enchantovaná řada
+  // začíná až na T4, takže enchantovaný T3 neexistuje.
+  const nizsiEnch = (tier === 4 && ench > 0) ? 0 : ench;
+  return { raw, nizsiRefined: 1, nizsiEnch };
+}
+
+/** itemvalue výstupu — každý stupeň enchantu zdvojnásobuje. */
+function itemValue(tier, ench) {
+  return ITEM_VALUE[tier] * Math.pow(2, ench);
+}
+
+/** Poplatek stanice za 1 kus. */
+function poplatekStanice(tier, ench, sazbaZa100Nutrition) {
+  const nutrition = itemValue(tier, ench) * K.nutritionKoef;
+  return nutrition * sazbaZa100Nutrition / 100;
+}
+
+/** Focus na 1 kus. Klíč je efektivní úroveň = tier + enchant. */
+function focusNaKus(tier, ench) {
+  return FOCUS_COST[tier + ench] ?? null;
+}
+
+/**
+ * Hlavní výpočet. Vrací kompletní rozpad, ne jen výsledné číslo —
+ * aby šlo zkontrolovat, kde se případně bere nesmysl.
+ */
+function spocitatRefining(v) {
+  const { tier, ench, pocet, cenaRaw, cenaNizsi, cenaProdej,
+          mestoMaSpecializaci, focus, denniBonus, premium,
+          sazbaStanice, rezimNakup, rezimProdej } = v;
+
+  const bonus = productionBonus({ mestoMaSpecializaci, focus, denniBonus });
+  // Ruční hodnota má přednost — např. pro hideout nebo ostrov, které
+  // mají jiný model bonusů, než co umí productionBonus().
+  const rrr = (v.rrrOverride != null) ? v.rrrOverride : returnRate(bonus);
+  const r     = recept(tier, ench);
+
+  // Nominální spotřeba na celou sérii
+  const rawNominal   = r.raw * pocet;
+  const nizsiNominal = r.nizsiRefined * pocet;
+
+  // Vrácené suroviny se použijí znovu → efektivní spotřeba je nižší.
+  const faktor       = 1 - rrr;
+  const rawEfektivni   = rawNominal * faktor;
+  const nizsiEfektivni = nizsiNominal * faktor;
+
+  // --- NÁKLADY -------------------------------------------------------
+  let nakladRaw   = rawEfektivni * cenaRaw;
+  let nakladNizsi = nizsiEfektivni * cenaNizsi;
+
+  // Buy order = platím setup fee z hodnoty objednávky, i kdyby se nevyplnila.
+  let setupNakup = 0;
+  if (rezimNakup === "order") {
+    setupNakup = (nakladRaw + nakladNizsi) * K.setupFee;
+  }
+
+  const poplatekKus = poplatekStanice(tier, ench, sazbaStanice);
+  const poplatekCelkem = poplatekKus * pocet;
+
+  const nakladyCelkem = nakladRaw + nakladNizsi + setupNakup + poplatekCelkem;
+
+  // --- VÝNOSY --------------------------------------------------------
+  const trzbaHruba = cenaProdej * pocet;
+
+  const sazbaDane = premium ? K.danPremium : K.danNormalni;
+  let dan = trzbaHruba * sazbaDane;
+  // Daň nikdy neklesne pod 1 silver za kus.
+  dan = Math.max(dan, K.minimalniDan * pocet);
+
+  // Sell order = platím setup fee z uvedené ceny.
+  const setupProdej = (rezimProdej === "order") ? trzbaHruba * K.setupFee : 0;
+
+  const trzbaCista = trzbaHruba - dan - setupProdej;
+
+  // --- VÝSLEDEK ------------------------------------------------------
+  const zisk   = trzbaCista - nakladyCelkem;
+  const marze  = nakladyCelkem > 0 ? zisk / nakladyCelkem : 0;
+
+  const focusKus = focusNaKus(tier, ench);
+
+  return {
+    bonus, rrr, recept: r, rucni: v.rrrOverride != null,
+    rawNominal, nizsiNominal, rawEfektivni, nizsiEfektivni,
+    nakladRaw, nakladNizsi, setupNakup, poplatekKus, poplatekCelkem, nakladyCelkem,
+    trzbaHruba, dan, sazbaDane, setupProdej, trzbaCista,
+    zisk, marze,
+    ziskNaKus: zisk / pocet,
+    focusCelkem: focusKus === null ? null : focusKus * pocet,
+    ziskNaFocus: focusKus ? zisk / (focusKus * pocet) : null,
+    vahaVstup:  (rawNominal * VAHA[tier]) + (nizsiNominal * VAHA[tier - 1] || 0),
+    vahaVystup: pocet * VAHA[tier],
+  };
+}
+
+
+/* ==========================================================================
+   ČÁST 3 — NAČÍTÁNÍ CEN (Albion Online Data Project)
+   ========================================================================== */
+
+/** Sestaví ID položky ve formátu, kterému rozumí AODP i herní data. */
+function idPolozky(zaklad, tier, ench) {
+  return ench > 0 ? `T${tier}_${zaklad}_LEVEL${ench}@${ench}` : `T${tier}_${zaklad}`;
+}
+
+/** Sentinel z AODP = položka nebyla nikdy naskenována. */
+function jeSentinel(datum, cena) {
+  return !datum || datum.startsWith("0001-01-01") || cena === 0;
+}
+
+function stariHodin(datum) {
+  return (Date.now() - new Date(datum + "Z").getTime()) / 3600000;
+}
+
+async function nacistCeny(server, ids, mesto) {
+  const url = `https://${server}.albion-online-data.com/api/v2/stats/prices/`
+            + `${ids.join(",")}.json?locations=${encodeURIComponent(mesto)}&qualities=1`;
+  const odpoved = await fetch(url);
+  if (!odpoved.ok) throw new Error(`AODP vrátilo HTTP ${odpoved.status}`);
+  return odpoved.json();
+}
+
+
+/* ==========================================================================
+   ČÁST 4 — ZOBRAZENÍ
+   ========================================================================== */
+
+const $ = (id) => document.getElementById(id);
+const cislo = (n, des = 0) =>
+  n.toLocaleString("cs-CZ", { minimumFractionDigits: des, maximumFractionDigits: des });
+
+function naplnitSelecty() {
+  $("linka").innerHTML = Object.entries(LINKY)
+    .map(([k, v]) => `<option value="${k}">${v.nazev}</option>`).join("");
+  $("tier").innerHTML = [2,3,4,5,6,7,8]
+    .map(t => `<option value="${t}"${t === 5 ? " selected" : ""}>T${t}</option>`).join("");
+  $("mesto").innerHTML = Object.entries(MESTA)
+    .map(([mesto, linka]) =>
+      `<option value="${mesto}">${mesto}${linka ? ` — bonus na ${LINKY[linka].koho}` : ""}</option>`)
+    .join("");
+  aktualizovatEnchanty();
+}
+
+/** Enchant nabízíme jen tam, kde existuje: od T4 a ne pro kámen. */
+function aktualizovatEnchanty() {
+  const tier  = +$("tier").value;
+  const linka = LINKY[$("linka").value];
+  const lze   = linka.enchantovatelna && tier >= 4;
+  const sel   = $("ench");
+  const puvodni = sel.value;
+  const urovne = [...Array(MAX_ENCHANT + 1).keys()];   // 0..4
+  sel.innerHTML = lze
+    ? urovne.map(e => `<option value="${e}">${e === 0 ? "žádný" : "." + e}</option>`).join("")
+    : `<option value="0">žádný</option>`;
+  sel.value = lze && puvodni ? puvodni : "0";
+  sel.disabled = !lze;
+}
+
+function znackaStari(datum) {
+  const h = stariHodin(datum);
+  if (h < 6)  return `<span class="stale ok">${cislo(h,1)} h</span>`;
+  if (h < 48) return `<span class="stale warn">${cislo(h,0)} h</span>`;
+  return `<span class="stale bad">${cislo(h/24,0)} dní — pozor</span>`;
+}
+
+function vykreslit(v, r, ceny) {
+  const t = v.tier;
+  const znak = (n) => (n >= 0 ? "ok" : "bad");
+
+  const radky = [];
+  const R = (popis, hodnota, tridaCss = "") =>
+    radky.push(`<tr><td>${popis}</td><td class="${tridaCss}">${hodnota}</td></tr>`);
+  const H = (nadpis) => radky.push(`<tr class="head"><td colspan="2">${nadpis}</td></tr>`);
+
+  H("Návratnost surovin");
+  if (r.rucni) {
+    R("<span class='warn'>Return rate zadán ručně — bonusy města, focusu " +
+      "a denního bonusu se ignorují.</span>", "");
+  } else {
+    R("Součet bonusů", `${r.bonus}`);
+    R("<span class='note'>18 základ" +
+        (v.mestoMaSpecializaci ? " + 40 specializace města" : "") +
+        (v.focus ? " + 59 focus" : "") +
+        (v.denniBonus ? ` + ${v.denniBonus} denní` : "") + "</span>", "");
+  }
+  R("<b>Return rate</b>", `<b>${cislo(r.rrr * 100, 1)} %</b>`);
+  R("Z každé koupené suroviny vyrobíš", `<b>${cislo(1 / (1 - r.rrr), 3)}×</b>`);
+  R("<span class='note'>Vrácené suroviny se vrací znovu, a znovu — proto je to " +
+    `1/(1−${cislo(r.rrr * 100, 1)} %), ne 1+${cislo(r.rrr * 100, 1)} %</span>`, "");
+
+  H("Spotřeba surovin");
+  R(`Raw surovina (${r.recept.raw}× na kus)`,
+    `${cislo(r.rawNominal)} → <b>${cislo(r.rawEfektivni, 1)}</b>`);
+  if (r.recept.nizsiRefined) {
+    R(`Refined T${t-1} (1× na kus)`,
+      `${cislo(r.nizsiNominal)} → <b>${cislo(r.nizsiEfektivni, 1)}</b>`);
+  }
+  R("<span class='note'>Vlevo nominálně, vpravo po odečtení vráceného</span>", "");
+
+  H("Náklady");
+  R(`Raw × ${cislo(ceny.raw)} silver`, cislo(r.nakladRaw));
+  if (r.recept.nizsiRefined) R(`Refined T${t-1} × ${cislo(ceny.nizsi)} silver`, cislo(r.nakladNizsi));
+  if (r.setupNakup > 0) R("Setup fee buy orderů (2,5 %)", cislo(r.setupNakup));
+  R(`Poplatek stanice (${cislo(r.poplatekKus, 2)} / kus)`, cislo(r.poplatekCelkem));
+  R("<b>Náklady celkem</b>", `<b>${cislo(r.nakladyCelkem)}</b>`);
+
+  H("Výnos");
+  R(`Prodej ${cislo(v.pocet)} ks × ${cislo(ceny.prodej)} silver`, cislo(r.trzbaHruba));
+  R(`Daň z prodeje (${cislo(r.sazbaDane * 100, 0)} %)`, "−" + cislo(r.dan));
+  if (r.setupProdej > 0) R("Setup fee sell orderu (2,5 %)", "−" + cislo(r.setupProdej));
+  R("<b>Čistá tržba</b>", `<b>${cislo(r.trzbaCista)}</b>`);
+
+  radky.push(`<tr class="total"><td>ČISTÝ ZISK</td>
+    <td class="${znak(r.zisk)}">${r.zisk >= 0 ? "+" : ""}${cislo(r.zisk)}</td></tr>`);
+  R("Marže", `<span class="${znak(r.zisk)}">${cislo(r.marze * 100, 1)} %</span>`);
+  R("Zisk na kus", `<span class="${znak(r.zisk)}">${cislo(r.ziskNaKus, 1)}</span>`);
+  if (r.focusCelkem !== null) {
+    R("Focus celkem", cislo(r.focusCelkem));
+    R("Zisk na 1 focus", `<span class="${znak(r.zisk)}">${cislo(r.ziskNaFocus, 2)}</span>`);
+  }
+
+  H("Váha (limit je nosnost mountu)");
+  R("Vstupní suroviny", `${cislo(r.vahaVstup, 1)} kg`);
+  R("Hotový produkt", `${cislo(r.vahaVystup, 1)} kg`);
+  R("<span class='note'>Refining před cestou váhu snižuje</span>",
+    `<b>${cislo(r.vahaVstup / r.vahaVystup, 1)}×</b>`);
+
+  // Stáří cen se zobrazuje u samotných políček, ne tady — cena může být
+  // zadaná ručně a pak žádné stáří nemá.
+
+  $("vysledek").innerHTML = `<table>${radky.join("")}</table>`;
+}
+
+
+/* ==========================================================================
+   ČÁST 5 — SPOJENÍ VŠEHO
+   ========================================================================== */
+
+/** Které tři položky se právě oceňují. Odvozeno ze vstupů, potřebuje to
+ *  načítání z AODP i popisky u políček. */
+function aktualniPolozky() {
+  const linka = LINKY[$("linka").value];
+  const tier  = +$("tier").value;
+  const ench  = +$("ench").value;
+  const r     = recept(tier, ench);
+  return {
+    tier, ench, recept: r,
+    idRaw:    idPolozky(linka.raw, tier, ench),
+    idVystup: idPolozky(linka.refined, tier, ench),
+    idNizsi:  r.nizsiRefined ? idPolozky(linka.refined, tier - 1, r.nizsiEnch) : null,
+  };
+}
+
+/** Popisky cenových políček — ať je vidět, co přesně se má zadat. */
+function aktualizovatPopiskyCen() {
+  const p = aktualniPolozky();
+  $("lblRaw").innerHTML    = `Nákup — raw surovina <code>${p.idRaw}</code>`;
+  $("lblProdej").innerHTML = `Prodej — produkt <code>${p.idVystup}</code>`;
+
+  // T2 nemá nižší refined → políčko nedává smysl a musí zmizet,
+  // jinak by uživatel vyplňoval něco, co se nikam nepoužije.
+  const maNizsi = !!p.idNizsi;
+  $("blokNizsi").style.display = maNizsi ? "" : "none";
+  if (maNizsi) $("lblNizsi").innerHTML = `Nákup — refined o tier níž <code>${p.idNizsi}</code>`;
+}
+
+/**
+ * Return rate podle aktuálních vstupů, nebo ručně zadaný.
+ * Vrací i rozpad, aby bylo vidět, ODKUD se to číslo vzalo — bez toho
+ * uživatel netuší, proč mu vyšlo zrovna tohle.
+ */
+function aktualniRRR() {
+  const rucne = $("rrrRucne").checked;
+  $("rrrHodnota").style.display = rucne ? "" : "none";
+
+  if (rucne) {
+    const h = +$("rrrHodnota").value;
+    return { rrr: h > 0 ? h / 100 : null, rucni: true, rozpad: "zadáno ručně" };
+  }
+
+  const mesto     = $("mesto").value;
+  const linka     = $("linka").value;
+  const maSpec    = MESTA[mesto] === linka;
+  const focus     = $("focus").checked;
+  const denni     = +$("denni").value;
+  const bonus     = productionBonus({ mestoMaSpecializaci: maSpec, focus, denniBonus: denni });
+
+  const casti = [`18 základ`];
+  if (maSpec) casti.push(`40 bonus ${mesto}u`);
+  if (focus)  casti.push(`59 focus`);
+  if (denni)  casti.push(`${denni} denní`);
+
+  return {
+    rrr: returnRate(bonus), rucni: false, bonus, maSpec, mesto, linka,
+    rozpad: casti.join(" + ") + ` = ${bonus}`,
+  };
+}
+
+/** Vykreslí živý ukazatel return rate nad vstupy. */
+function zobrazitRRR(s) {
+  if (s.rrr === null) {
+    $("rrrZobrazeni").innerHTML = `<span class="warn">—</span>`;
+    $("rrrRozpad").innerHTML = `<span class="warn">Zadej hodnotu v procentech.</span>`;
+    return;
+  }
+  $("rrrZobrazeni").innerHTML =
+    `${cislo(s.rrr * 100, 1)} % <small>→ vyrobíš ${cislo(1 / (1 - s.rrr), 3)}× víc, než koupíš</small>`;
+
+  // Nejčastější past: město má bonus, ale na JINOU surovinu.
+  let varovani = "";
+  if (!s.rucni && !s.maSpec && MESTA[s.mesto]) {
+    varovani = `<br><span class="warn">Pozor: ${s.mesto} má bonus na `
+             + `${LINKY[MESTA[s.mesto]].koho}, ne na `
+             + `${LINKY[s.linka].koho} — bonus 40 se nezapočítal.</span>`;
+  } else if (!s.rucni && !MESTA[s.mesto]) {
+    varovani = `<br><span class="note">${s.mesto} nemá bonus na refining žádné suroviny.</span>`;
+  }
+  $("rrrRozpad").innerHTML = s.rozpad + varovani;
+}
+
+/** Přepočet z toho, co je právě v políčkách. Nesahá na síť. */
+function prepocitat() {
+  const p     = aktualniPolozky();
+  const mesto = $("mesto").value;
+  const pocet = +$("pocet").value;
+
+  const s = aktualniRRR();
+  zobrazitRRR(s);
+  if (s.rrr === null) {
+    $("vysledek").innerHTML = `<div class="empty">Zadej return rate v procentech.</div>`;
+    return;
+  }
+
+  const cenaRaw    = +$("cenaRaw").value;
+  const cenaNizsi  = p.idNizsi ? +$("cenaNizsi").value : 0;
+  const cenaProdej = +$("cenaProdej").value;
+
+  // Chybějící cena = nepočítat. Nula by dala hezky vypadající nesmysl.
+  const chybi = [];
+  if (!(cenaRaw > 0))                 chybi.push(p.idRaw);
+  if (p.idNizsi && !(cenaNizsi > 0))  chybi.push(p.idNizsi);
+  if (!(cenaProdej > 0))              chybi.push(p.idVystup);
+
+  if (chybi.length) {
+    $("vysledek").innerHTML = `<div class="empty">Chybí cena pro
+      ${chybi.map(i => `<code>${i}</code>`).join(", ")}.<br><br>
+      Zadej ji ručně, nebo zkus předvyplnit z AODP.</div>`;
+    return;
+  }
+
+  const v = {
+    tier: p.tier, ench: p.ench, pocet,
+    cenaRaw, cenaNizsi, cenaProdej,
+    mestoMaSpecializaci: MESTA[mesto] === $("linka").value,
+    focus: $("focus").checked,
+    denniBonus: +$("denni").value,
+    premium: $("premium").checked,
+    sazbaStanice: +$("poplatek").value,
+    rezimNakup: $("rezimNakup").value,
+    rezimProdej: $("rezimProdej").value,
+    rrrOverride: s.rucni ? s.rrr : null,
+  };
+
+  vykreslit(v, spocitatRefining(v), { raw: cenaRaw, nizsi: cenaNizsi, prodej: cenaProdej });
+}
+
+/** Předvyplní políčka živými cenami. Co se nepodaří, nechá být a řekne to. */
+async function predvyplnit() {
+  const btn = $("nacist"), stav = $("stav");
+  btn.disabled = true;
+  stav.textContent = "Načítám…";
+  stav.className = "note";
+
+  try {
+    const server = $("server").value;
+    const mesto  = $("mesto").value;
+    const p      = aktualniPolozky();
+
+    const ids  = [p.idRaw, p.idVystup, ...(p.idNizsi ? [p.idNizsi] : [])];
+    const data = await nacistCeny(server, ids, mesto);
+    const najdi = (id) => data.find(d => d.item_id === id) || {};
+
+    // Nákup hned = beru ze sell orderů; přes buy order = nabízím buy_price_max.
+    const zNakupu = (z) => $("rezimNakup").value === "instant"
+      ? { c: z.sell_price_min, d: z.sell_price_min_date }
+      : { c: z.buy_price_max,  d: z.buy_price_max_date };
+    // Prodej hned = prodávám do buy orderů; přes sell order = listuji.
+    const zProdeje = (z) => $("rezimProdej").value === "instant"
+      ? { c: z.buy_price_max,  d: z.buy_price_max_date }
+      : { c: z.sell_price_min, d: z.sell_price_min_date };
+
+    const nastav = (poleId, ageId, cena) => {
+      if (jeSentinel(cena.d, cena.c)) {
+        $(ageId).innerHTML = `<span class="bad">AODP tuhle položku v ${mesto} nezná — zadej ručně</span>`;
+        return false;
+      }
+      $(poleId).value = cena.c;
+      $(ageId).innerHTML = `stáří dat: ${znackaStari(cena.d)}`;
+      return true;
+    };
+
+    let ok = 0, celkem = 0;
+    celkem++; if (nastav("cenaRaw", "ageRaw", zNakupu(najdi(p.idRaw)))) ok++;
+    celkem++; if (nastav("cenaProdej", "ageProdej", zProdeje(najdi(p.idVystup)))) ok++;
+    if (p.idNizsi) { celkem++; if (nastav("cenaNizsi", "ageNizsi", zNakupu(najdi(p.idNizsi)))) ok++; }
+
+    if (ok === celkem) {
+      stav.textContent = `Načteno z ${server}.albion-online-data.com`;
+      stav.className = "note ok";
+    } else {
+      stav.innerHTML = `<span class="warn">Načteno ${ok} z ${celkem}. Data jsou
+        crowdsourcovaná — existují jen pro to, co si někdo nedávno otevřel
+        v herní tržnici. Zbytek doplň ručně.</span>`;
+    }
+
+    prepocitat();
+
+  } catch (e) {
+    stav.textContent = "Chyba: " + e.message;
+    stav.className = "note bad";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** Změna tieru/linky mění i to, co se oceňuje → staré ceny by lhaly. */
+function zmenaPolozky() {
+  aktualizovatEnchanty();
+  aktualizovatPopiskyCen();
+  for (const id of ["cenaRaw", "cenaNizsi", "cenaProdej"]) $(id).value = "";
+  for (const id of ["ageRaw", "ageNizsi", "ageProdej"]) $(id).textContent = "";
+  $("stav").textContent = "";
+  prepocitat();
+}
+
+// Změna položky = zahodit ceny. Změna čehokoli jiného = jen přepočítat.
+for (const id of ["tier", "linka", "ench"])
+  $(id).addEventListener("change", zmenaPolozky);
+for (const id of ["mesto", "denni", "focus", "premium", "poplatek", "pocet",
+                  "rezimNakup", "rezimProdej", "cenaRaw", "cenaNizsi", "cenaProdej",
+                  "rrrRucne", "rrrHodnota"])
+  $(id).addEventListener("input", prepocitat);
+
+$("nacist").addEventListener("click", predvyplnit);
+
+naplnitSelecty();
+aktualizovatPopiskyCen();
+prepocitat();
+</script>
+</body>
+</html>

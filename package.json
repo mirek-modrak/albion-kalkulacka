@@ -1,0 +1,15 @@
+{
+  "name": "albion-kalkulacka",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "jadro",
+    "nastroje"
+  ],
+  "scripts": {
+    "generuj": "node nastroje/generuj-data.mjs",
+    "test": "npm run test --workspace jadro",
+    "kontrola": "npm run kontrola --workspace jadro"
+  }
+}

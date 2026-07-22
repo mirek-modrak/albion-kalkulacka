@@ -1,0 +1,8 @@
+# Sjednocení konců řádků.
+# Bez tohohle by soubory upravené na Windows vypadaly na Linuxu (VPS)
+# jako celé změněné a diffy by byly nečitelné.
+* text=auto eol=lf
+
+# Vygenerovaná herní data — needitovat ručně, jen přes `npm run generuj`.
+jadro/data/hra.json linguist-generated=true
+package-lock.json  linguist-generated=true
