@@ -30,12 +30,30 @@ export class SkladCen {
     this.mapa.set(klic(cena.mesto, zaklad, enchant, cena.typ), cena);
   }
 
-  /** Ruční zadání. Má přednost před staženými cenami. */
+  /**
+   * Ruční zadání. Má přednost před staženými cenami a stažení ho nepřepíše.
+   *
+   * Hodnota se omezuje na rozumný rozsah — jádro validaci nedělá (a nemá,
+   * je to čistá matematika), takže se to musí ošetřit tady, kde vstup vzniká.
+   * Bez toho by záporná cena nebo 10^15 udělaly z celého pořadí nesmysl.
+   */
   ulozRucne(mesto: string, zaklad: string, enchant: number, typ: TypCeny, hodnota: number): void {
+    const omezena = Math.min(Math.max(hodnota, 0), 1_000_000_000);
+    if (!Number.isFinite(omezena)) return;
     this.uloz(
-      { hodnota, zdroj: "rucne", cas: new Date().toISOString(), mesto, typ },
+      { hodnota: omezena, zdroj: "rucne", cas: new Date().toISOString(), mesto, typ },
       zaklad, enchant,
     );
+  }
+
+  /** Zruší ruční hodnotu, aby se zase používala cena z AODP. */
+  zrusRucne(mesto: string, zaklad: string, enchant: number, typ: TypCeny): void {
+    const k = klic(mesto, zaklad, enchant, typ);
+    if (this.mapa.get(k)?.zdroj === "rucne") this.mapa.delete(k);
+  }
+
+  jeRucne(mesto: string, zaklad: string, enchant: number, typ: TypCeny): boolean {
+    return this.mapa.get(klic(mesto, zaklad, enchant, typ))?.zdroj === "rucne";
   }
 
   get pocet(): number {
@@ -55,29 +73,39 @@ export class SkladCen {
   naplnZAodp(
     radky: RadekCeny[],
     rozlozId: (id: string) => { zaklad: string; enchant: number },
-  ): number {
+  ): { ulozeno: number; zachovanoRucnich: number } {
     let ulozeno = 0;
+    let zachovanoRucnich = 0;
+
+    // Ručně zadaná cena je vědomý zásah — nový sken ji NEPŘEPÍŠE.
+    // Jinak by uživatel opravoval totéž po každém skenu znovu.
+    const ulozPokudNeniRucni = (cena: Cena, zaklad: string, enchant: number) => {
+      if (this.jeRucne(cena.mesto, zaklad, enchant, cena.typ)) {
+        zachovanoRucnich++;
+        return;
+      }
+      this.uloz(cena, zaklad, enchant);
+      ulozeno++;
+    };
 
     for (const r of radky) {
       const { zaklad, enchant } = rozlozId(r.item_id);
 
       if (!jeSentinel(r.sell_price_min, r.sell_price_min_date)) {
-        this.uloz({
+        ulozPokudNeniRucni({
           hodnota: r.sell_price_min, zdroj: "aodp",
           cas: r.sell_price_min_date, mesto: r.city, typ: "sell_min",
         }, zaklad, enchant);
-        ulozeno++;
       }
 
       if (!jeSentinel(r.buy_price_max, r.buy_price_max_date)) {
-        this.uloz({
+        ulozPokudNeniRucni({
           hodnota: r.buy_price_max, zdroj: "aodp",
           cas: r.buy_price_max_date, mesto: r.city, typ: "buy_max",
         }, zaklad, enchant);
-        ulozeno++;
       }
     }
-    return ulozeno;
+    return { ulozeno, zachovanoRucnich };
   }
 
   /** Nejstarší cena z předaného seznamu, v hodinách. Null u ručních. */

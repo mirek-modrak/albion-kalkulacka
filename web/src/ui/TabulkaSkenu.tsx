@@ -1,15 +1,12 @@
 import { hodnotaMetriky, type Metrika, type RadekSkenu } from "../stav/sken";
+import { barvaStari, cislo, procenta, stari } from "./format";
 
 interface Props {
   radky: RadekSkenu[];
   metrika: Metrika;
   celkem: number;
+  otevritDetail: (radek: RadekSkenu) => void;
 }
-
-const cislo = (n: number, des = 0) =>
-  n.toLocaleString("cs-CZ", { minimumFractionDigits: des, maximumFractionDigits: des });
-
-const procenta = (n: number) => `${cislo(n * 100, 1)} %`;
 
 /** Barevný odznak stáří dat. Zastaralá cena vypadá stejně jako čerstvá — dokud se neoznačí. */
 function OdznakStari({ hodin, maCenu }: { hodin: number | null; maCenu: boolean }) {
@@ -19,12 +16,7 @@ function OdznakStari({ hodin, maCenu }: { hodin: number | null; maCenu: boolean 
   if (hodin === null) {
     return <span className="text-xs text-slate-400">ručně</span>;
   }
-  const styl =
-    hodin < 6 ? "text-emerald-600 dark:text-emerald-400"
-      : hodin < 48 ? "text-amber-600 dark:text-amber-400"
-        : "text-red-600 dark:text-red-400";
-  const text = hodin < 48 ? `${cislo(hodin, 0)} h` : `${cislo(hodin / 24, 0)} d`;
-  return <span className={`text-xs ${styl}`}>{text}</span>;
+  return <span className={`text-xs ${barvaStari(hodin)}`}>{stari(hodin)}</span>;
 }
 
 function HodnotaMetriky({ radek, metrika }: { radek: RadekSkenu; metrika: Metrika }) {
@@ -36,7 +28,7 @@ function HodnotaMetriky({ radek, metrika }: { radek: RadekSkenu; metrika: Metrik
   return <span className={`font-semibold ${styl}`}>{text}</span>;
 }
 
-export function TabulkaSkenu({ radky, metrika, celkem }: Props) {
+export function TabulkaSkenu({ radky, metrika, celkem, otevritDetail }: Props) {
   if (celkem === 0) {
     return (
       <div className="rounded-xl border border-slate-200 p-8 text-center text-slate-500
@@ -75,7 +67,10 @@ export function TabulkaSkenu({ radky, metrika, celkem }: Props) {
         <tbody>
           {radky.map((r) => (
             <tr key={`${r.polozka.zaklad}#${r.enchant}`}
-                className="border-t border-slate-100 dark:border-slate-800/60">
+                onClick={() => otevritDetail(r)}
+                title="Zobrazit rozpad výpočtu a upravit ceny"
+                className="cursor-pointer border-t border-slate-100 hover:bg-slate-50
+                           dark:border-slate-800/60 dark:hover:bg-slate-800/40">
               <td className="px-3 py-1.5 whitespace-nowrap">{r.nazev}</td>
               <td className="px-3 py-1.5 text-right">
                 <HodnotaMetriky radek={r} metrika={metrika} />

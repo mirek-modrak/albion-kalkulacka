@@ -8,6 +8,7 @@ import {
 } from "./stav/sken";
 import { OvladaciPanel } from "./ui/OvladaciPanel";
 import { TabulkaSkenu } from "./ui/TabulkaSkenu";
+import { DetailPolozky } from "./ui/DetailPolozky";
 
 /** Lidský název položky. Herní ID typu T5_METALBAR nikomu nic neřekne. */
 function nazevPolozky(zaklad: string, enchant: number): string {
@@ -24,7 +25,7 @@ function nazevPolozky(zaklad: string, enchant: number): string {
 type StavSkenu =
   | { druh: "necinny" }
   | { druh: "bezi"; hotovo: number; celkem: number }
-  | { druh: "hotovo"; ulozeno: number; kdy: Date }
+  | { druh: "hotovo"; ulozeno: number; zachovanoRucnich: number; kdy: Date }
   | { druh: "chyba"; zprava: string };
 
 export function App() {
@@ -43,6 +44,10 @@ export function App() {
   const [maxStari, setMaxStari] = useState<number>(48);
   const [jenZiskove, setJenZiskove] = useState(false);
   const [stav, setStav] = useState<StavSkenu>({ druh: "necinny" });
+
+  // Detail se drží jako KLÍČ, ne jako objekt řádku. Kdyby se držel objekt,
+  // ukazoval by po úpravě ceny stará čísla — řádky se při přepočtu vytvářejí znovu.
+  const [detailKlic, setDetailKlic] = useState<string | null>(null);
 
   // Sklad cen přežívá překreslení. Ceny se sbírají napříč skeny —
   // ruční zadání ani starší stažení se nemají ztrácet.
@@ -83,9 +88,9 @@ export function App() {
       // Mezitím mohl začít novější sken — tenhle výsledek už neplatí.
       if (poradi !== poradiRef.current) return;
 
-      const ulozeno = skladRef.current.naplnZAodp(radky, rozlozId);
+      const { ulozeno, zachovanoRucnich } = skladRef.current.naplnZAodp(radky, rozlozId);
       setVerzeCen((v) => v + 1);
-      setStav({ druh: "hotovo", ulozeno, kdy: new Date() });
+      setStav({ druh: "hotovo", ulozeno, zachovanoRucnich, kdy: new Date() });
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       if (poradi !== poradiRef.current) return;
@@ -111,6 +116,12 @@ export function App() {
 
   const s = souhrn(radky);
 
+  // Řádek pro detail se dohledává podle klíče v ČERSTVÝCH datech,
+  // aby detail po úpravě ceny ukázal nová čísla, ne ta při otevření.
+  const detail = detailKlic
+    ? radky.find((r) => `${r.polozka.zaklad}#${r.enchant}` === detailKlic) ?? null
+    : null;
+
   return (
     <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
       <header className="mb-5">
@@ -131,8 +142,24 @@ export function App() {
           stav={stav} spustitSken={spustitSken}
           souhrn={s}
         />
-        <TabulkaSkenu radky={filtrovane} metrika={metrika} celkem={s.celkem} />
+        <TabulkaSkenu
+          radky={filtrovane} metrika={metrika} celkem={s.celkem}
+          otevritDetail={(r) => setDetailKlic(`${r.polozka.zaklad}#${r.enchant}`)}
+        />
       </div>
+
+      {detail && (
+        <DetailPolozky
+          radek={detail}
+          nastaveni={nastaveni}
+          sklad={skladRef.current}
+          nazevPolozky={nazevPolozky}
+          // Přepočítá se CELÝ sken, ne jen detail — jedna cena ovlivní víc řádků
+          // (T4 ingot je vstupem pro T5 a zároveň výstupem T4).
+          poZmeneCeny={() => setVerzeCen((v) => v + 1)}
+          zavrit={() => setDetailKlic(null)}
+        />
+      )}
     </div>
   );
 }

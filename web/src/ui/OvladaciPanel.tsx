@@ -157,9 +157,16 @@ function StavHlaska({ stav }: { stav: StavSkenu }) {
   }
   if (stav.druh === "hotovo") {
     return (
-      <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
-        Načteno {stav.ulozeno} cen v {stav.kdy.toLocaleTimeString("cs-CZ")}
-      </p>
+      <>
+        <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+          Načteno {stav.ulozeno} cen v {stav.kdy.toLocaleTimeString("cs-CZ")}
+        </p>
+        {stav.zachovanoRucnich > 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            {stav.zachovanoRucnich}× ponechána ruční cena — sken je nepřepisuje
+          </p>
+        )}
+      </>
     );
   }
   return null;

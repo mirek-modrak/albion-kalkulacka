@@ -108,8 +108,8 @@ a ta se **musí** kontrolovat.
 |---|---|---|
 | F1 | `jadro/` + zlaté vektory + generátor | ✅ hotovo |
 | F2 | web — sken surovin | ✅ hotovo |
-| F3 | detail položky (proklik ze skenu) | další na řadě |
-| F4 | sken předmětů po kategoriích | |
+| F3 | detail položky (proklik ze skenu) | ✅ hotovo |
+| F4 | sken předmětů po kategoriích | další na řadě |
 | F5 | srovnání měst, zisk/kg, nosnost mountu | |
 | F6 | koupit vs. vyrobit | |
 | F7 | nasazení na VPS | |
