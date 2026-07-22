@@ -319,16 +319,30 @@ Tohle je významnější než úspora práce — mění to, co umí skener říc
 Přeuspořádáno 2026-07-22 podle cíle *„co nejefektivněji vydělávat"* —
 těžištěm je **skener**, ne kalkulačka na jednu položku.
 
-| Fáze | Co vznikne | Scénáře |
-|---|---|---|
-| **F1** | `jadro/` — jeden výpočet receptu + zlaté vektory + generátor herních dat | základ pro vše |
-| **F2** | `web/` — sken surovin: stáhne ceny, spočítá vše, seřadí | **S2** |
-| **F3** | detail položky = dnešní prototyp, proklik ze skenu | **S1** |
-| **F4** | rozšíření skenu na předměty podle kategorií | **S3** |
-| **F5** | srovnání měst + zisk na kg + nosnost mountu | **S5, S6** |
-| **F6** | koupit vs. vyrobit (řetěz receptů) | **S4** |
-| **F7** | nasazení na VPS (Coolify, subdoména) | — |
-| **F8** | `sluzba/` — hlídání a upozornění na pozadí | až bude potřeba |
+| Fáze | Co vznikne | Scénáře | Stav |
+|---|---|---|---|
+| **F1** | `jadro/` — jeden výpočet receptu + zlaté vektory + generátor herních dat | základ pro vše | ✅ |
+| **F2** | `web/` — sken surovin: stáhne ceny, spočítá vše, seřadí | **S2** | ✅ |
+| **F3** | detail položky, proklik ze skenu, ruční ceny | **S1** | ✅ |
+| **F4** | rozšíření skenu na předměty podle kategorií | **S3** | ← další |
+| **F5** | **nejlepší příležitosti napříč všemi městy** | **S9** | |
+| **F6** | graf ceny a objemu v čase (z `/stats/history`) | **S8** | |
+| **F7** | srovnání měst pro převoz + zisk na kg + nosnost mountu | **S5, S6** | |
+| **F8** | koupit vs. vyrobit (řetěz receptů) | **S4** | |
+| **F9** | nasazení na VPS (Coolify, subdoména) | — | |
+| **F10** | `sluzba/` — hlídání a upozornění na pozadí | až bude potřeba | |
+
+### Proč je S9 (napříč městy) až za F4, a ne hned
+
+Obojí rozšiřuje sken, ale v jiné ose: **F4 rozšiřuje CO** se skenuje
+(předměty navíc k surovinám), **F5 rozšiřuje KDE** (všech 7 měst).
+
+Kdyby se udělalo F5 první, muselo by se po F4 rozšiřovat znovu.
+V tomhle pořadí se srovnání měst postaví **jednou a rovnou pokryje
+suroviny i předměty**.
+
+Datově to nic nestojí: AODP násobí odpověď přes `locations`, ne počet
+dotazů — 205 ID × 7 měst je jeden dotaz (ověřeno, 1 435 cen za 0,48 s).
 
 **Změny oproti původnímu pořadí:**
 - sken (F2) je hned po jádře, ne až třetí — je to jádro produktu, ne nadstavba

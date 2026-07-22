@@ -109,8 +109,10 @@ a ta se **musí** kontrolovat.
 | F1 | `jadro/` + zlaté vektory + generátor | ✅ hotovo |
 | F2 | web — sken surovin | ✅ hotovo |
 | F3 | detail položky (proklik ze skenu) | ✅ hotovo |
-| F4 | sken předmětů po kategoriích | další na řadě |
-| F5 | srovnání měst, zisk/kg, nosnost mountu | |
-| F6 | koupit vs. vyrobit | |
-| F7 | nasazení na VPS | |
-| F8 | hlídání a upozornění | |
+| F4 | sken předmětů po kategoriích | ← další |
+| F5 | nejlepší příležitosti napříč všemi městy | |
+| F6 | graf ceny a objemu v čase | |
+| F7 | převoz: srovnání měst, zisk/kg, nosnost mountu | |
+| F8 | koupit vs. vyrobit | |
+| F9 | nasazení na VPS | |
+| F10 | hlídání a upozornění | |

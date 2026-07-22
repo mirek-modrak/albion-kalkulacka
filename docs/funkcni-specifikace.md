@@ -193,6 +193,70 @@ takže se nemusí sbírat a je k dispozici okamžitě.
 
 ---
 
+### S9 — Kde se globálně nejvíc vydělá? 🆕 zadáno
+
+Mirek 2026-07-22: *„bokem by mělo být co je globálně nejefektivnější, tedy
+jaký item a kde. S tím že by to měla být asi top varianta (tedy vyrobeno
+v nejlepším městě — s bonusy na danou výrobu)."*
+
+**Zadáš:** nic (nebo jen server a své nastavení focus/premium)
+**Dostaneš:** pořadí napříč **všemi položkami × všemi městy**
+
+#### Domněnka, kterou to má prověřit
+
+Že nejlepší je vyrábět tam, kde je bonus. **Neplatí to automaticky.**
+Ověřeno při testování F2: refining rudy v Thetfordu (bonus +40) vycházel
+**ztrátově**, zatímco v Martlocku bez bonusu ziskově.
+
+Bonus zvedá návratnost surovin, ale v bonusovém městě všichni refinují —
+surovina je tam dražší a produkt levnější. **Nejlepší město se musí spočítat.**
+Výstup proto musí ukázat i **proč** dané město vyhrálo (bonus, nebo ceny).
+
+#### Datová náročnost — ověřeno naostro 2026-07-22
+
+| Test | Výsledek |
+|---|---|
+| 205 ID × **7 měst** v jednom dotazu | 1 435 cen, 58 kB, **0,48 s** |
+| Celý sken surovin přes všechna města | **2 dotazy** |
+| Podíl řádků, kde cena existuje | 92 % |
+
+AODP násobí odpověď přes `locations`, ne počet dotazů — srovnání všech měst
+tedy stojí **stejně jako sken jednoho města**.
+
+#### Hranice poctivosti
+
+| Model | Znamená | Poctivé? |
+|---|---|---|
+| **Vše v jednom městě** | koupit, vyrobit i prodat na jednom místě | ✅ žádné skryté náklady |
+| Nákup / výroba / prodej v různých městech | vyšší číslo | ⚠️ **dvě cesty pěšky** |
+
+Teleport je mimo rozsah. Druhá varianta není „lepší číslo", ale „lepší číslo
+plus dvě cesty s omezenou nosností mountu a rizikem ztráty".
+
+**Rozhodnutí:** S9 počítá **model jednoho města**. Odpovídá na
+*„kde se mám usadit a co tam dělat"*. Rozpad přes víc měst patří k S5/S6,
+kde se rovnou započítá váha a počet cest.
+
+#### Důsledek pro členění aplikace
+
+S9 se stane **úvodní obrazovkou** — je to přímá odpověď na hlavní otázku.
+Členění tím vyjde samo a nemusí se vymýšlet dopředu:
+
+```
+NEJLEPŠÍ PŘÍLEŽITOSTI   (S9)   ← co a kde, napříč vším
+   ↓ proklik na město
+SKEN MĚSTA              (S2)   ← hotovo ve F2
+   ↓ proklik na položku
+DETAIL POLOŽKY          (S1)   ← hotovo ve F3
+```
+
+**Proč ne záložky podle činnosti:** refining a crafting mají v datech
+identickou strukturu a počítá je tatáž funkce — jako dvě záložky by měly
+dvě kopie téhož nastavení. Black Market navíc není činnost, ale *místo
+prodeje*, které se týká obojího.
+
+---
+
 ### S8 — Přehled cen s grafem 📌 zadáno, počítat s tím
 
 Mirek 2026-07-22: *„ty ceny bych pak rád viděl v nějakým přehledném zobrazení
