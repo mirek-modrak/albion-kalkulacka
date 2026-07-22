@@ -7,6 +7,10 @@ dist/
 # Dočasné soubory generátoru (atomický zápis)
 *.tmp
 
+# Mezipaměť Vite
+.vite/
+**/.vite/
+
 # POZOR: jadro/data/hra.json se VERZUJE ZÁMĚRNĚ.
 # Build nesmí záviset na síti — viz docs/f1-plan.md, vada 2.
 dist/
