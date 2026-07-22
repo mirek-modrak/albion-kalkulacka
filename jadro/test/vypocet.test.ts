@@ -179,7 +179,7 @@ describe("nevratné suroviny", () => {
     // Uměle vyrobená položka: jeden vstup vratný, druhý ne, jinak shodné.
     // Kdyby se return rate uplatňoval na oba, spotřeba by vyšla stejná.
     const umela: HerniPolozka = {
-      zaklad: "TEST_POLOZKA", druh: "vybava", tier: 5, vaha: 1, itemValue: 32,
+      zaklad: "TEST_POLOZKA", nazev: null, druh: "vybava", tier: 5, vaha: 1, itemValue: 32,
       kategorie: null, maxEnchant: 0, vylepseni: [],
       varianty: [{
         enchant: 0, pocetVyrobenych: 1, focus: 0, cas: 0, sFactionTokenem: false,
@@ -213,7 +213,7 @@ describe("nevratné suroviny", () => {
 
   it("recept vyrábějící víc kusů dělí spotřebu správně", () => {
     const umela: HerniPolozka = {
-      zaklad: "TEST_DAVKA", druh: "vybava", tier: 5, vaha: 1, itemValue: 0,
+      zaklad: "TEST_DAVKA", nazev: null, druh: "vybava", tier: 5, vaha: 1, itemValue: 0,
       kategorie: null, maxEnchant: 0, vylepseni: [],
       varianty: [{
         enchant: 0, pocetVyrobenych: 5, focus: 100, cas: 0, sFactionTokenem: false,

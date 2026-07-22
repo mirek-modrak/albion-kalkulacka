@@ -219,6 +219,33 @@ const MESTA_PODLE_ID = {
   "5000": "Brecilien",
 };
 
+/**
+ * Herní názvy položek z `formatted/items.txt`.
+ *
+ * Formát řádku:  `   12: T5_MAIN_SWORD    : Expert's Broadsword`
+ *
+ * Bereme tenhle soubor (1,1 MB) místo `localization.xml` (70 MB) —
+ * obsahuje totéž, co potřebujeme, a je 60× menší.
+ *
+ * Bez názvů by aplikace ukazovala syrová ID typu `T4_2H_DUALSWORD`,
+ * což je pro uživatele nečitelné.
+ */
+function zpracujNazvy(text) {
+  const nazvy = new Map();
+  for (const radek of text.split("\n")) {
+    // Rozdělit jen na první dvě dvojtečky — název sám může obsahovat další.
+    const prvni = radek.indexOf(":");
+    if (prvni === -1) continue;
+    const druhy = radek.indexOf(":", prvni + 1);
+    if (druhy === -1) continue;
+
+    const id = radek.slice(prvni + 1, druhy).trim();
+    const nazev = radek.slice(druhy + 1).trim();
+    if (id && nazev) nazvy.set(id, nazev);
+  }
+  return nazvy;
+}
+
 function zpracujLokace(cm) {
   const koren = cm["craftingmodifiers"];
   const lokace = [];
@@ -326,9 +353,16 @@ function overit(data) {
   const kamen = najdi("T5_STONEBLOCK");
   if (kamen && kamen.maxEnchant !== 0) chyby.push(`kámen nemá mít enchant, má ${kamen.maxEnchant}`);
 
+  // Bez názvů by aplikace ukazovala syrová ID — nečitelné.
+  const bezNazvu = data.polozky.filter((p) => !p.nazev).length;
+  if (bezNazvu > data.polozky.length * 0.1) {
+    chyby.push(`${bezNazvu} položek bez názvu (formát items.txt se změnil?)`);
+  }
+
   const mec = najdi("T5_MAIN_SWORD");
   if (!mec) chyby.push("chybí T5_MAIN_SWORD");
   else {
+    if (!mec.nazev) chyby.push("T5_MAIN_SWORD nemá název");
     if (mec.druh !== "vybava") chyby.push("T5_MAIN_SWORD má být vybava");
     if (mec.kategorie !== "sword") chyby.push(`T5_MAIN_SWORD kategorie má být sword, je ${mec.kategorie}`);
 
@@ -368,21 +402,29 @@ async function hlavni() {
   console.log(`Generuji herní data z ao-bin-dumps`);
   console.log(`  commit: ${sha}${PRIPNUTE_SHA ? " (připnuto)" : ` (špička ${VETEV})`}`);
 
-  const [items, cm, gd] = await Promise.all([
+  const [items, cm, gd, nazvyText] = await Promise.all([
     stahni(sha, "items.xml"),
     stahni(sha, "craftingmodifiers.xml"),
     stahni(sha, "gamedata.xml"),
+    stahni(sha, "formatted/items.txt"),
   ]);
 
   console.log("  parsuji …");
   const parser = vytvorParser();
+  const nazvy = zpracujNazvy(nazvyText);
+
+  const polozky = zpracujPolozky(parser.parse(items));
+  for (const p of polozky) p.nazev = nazvy.get(p.zaklad) ?? null;
+
+  const bezNazvu = polozky.filter((p) => !p.nazev).length;
+  if (bezNazvu > 0) console.log(`  bez názvu: ${bezNazvu} položek`);
 
   const data = {
     commit: sha,
     vygenerovano: new Date().toISOString(),
     konstanty: zpracujKonstanty(parser.parse(gd)),
     lokace: zpracujLokace(parser.parse(cm)),
-    polozky: zpracujPolozky(parser.parse(items)),
+    polozky,
   };
 
   console.log(`  položek: ${data.polozky.length}, lokací: ${data.lokace.length}`);

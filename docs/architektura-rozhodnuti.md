@@ -324,8 +324,8 @@ těžištěm je **skener**, ne kalkulačka na jednu položku.
 | **F1** | `jadro/` — jeden výpočet receptu + zlaté vektory + generátor herních dat | základ pro vše | ✅ |
 | **F2** | `web/` — sken surovin: stáhne ceny, spočítá vše, seřadí | **S2** | ✅ |
 | **F3** | detail položky, proklik ze skenu, ruční ceny | **S1** | ✅ |
-| **F4** | rozšíření skenu na předměty podle kategorií | **S3** | ← další |
-| **F5** | **nejlepší příležitosti napříč všemi městy** | **S9** | |
+| **F4** | rozšíření skenu na předměty podle kategorií | **S3** | ✅ |
+| **F5** | **nejlepší příležitosti napříč všemi městy** | **S9** | ← další |
 | **F6** | graf ceny a objemu v čase (z `/stats/history`) | **S8** | |
 | **F7** | srovnání měst pro převoz + zisk na kg + nosnost mountu | **S5, S6** | |
 | **F8** | koupit vs. vyrobit (řetěz receptů) | **S4** | |

@@ -1,6 +1,7 @@
 import { MESTA } from "../data/hra";
 import { SERVERY, type Server } from "../data/aodp";
-import { METRIKY, type Metrika, type NastaveniSkenu } from "../stav/sken";
+import { SKUPINY, SUROVINY_ID, kategorieSPocty, nazevKategorie } from "../data/kategorie";
+import { METRIKY, potrebnaIds, type Metrika, type NastaveniSkenu } from "../stav/sken";
 import type { StavSkenu } from "../App";
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
   setJenZiskove: (b: boolean) => void;
   stav: StavSkenu;
   spustitSken: () => void;
+  zrusitSken: () => void;
   souhrn: {
     celkem: number; spocitano: number; ziskove: number;
     podezrele: number; chybiCena: number;
@@ -38,6 +40,16 @@ export function OvladaciPanel(p: Props) {
     <aside className="space-y-1 rounded-xl border border-slate-200 bg-white p-4
                       dark:border-slate-800 dark:bg-slate-900">
       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nastavení</h2>
+
+      <Popisek>Co skenovat</Popisek>
+      <select className={stylPole} value={p.nastaveni.skupina}
+              onChange={(e) => p.setNastaveni({
+                ...p.nastaveni, skupina: e.target.value, kategorie: [],
+              })}>
+        {SKUPINY.map((s) => <option key={s.id} value={s.id}>{s.nazev}</option>)}
+      </select>
+
+      <VyberKategorii nastaveni={p.nastaveni} setNastaveni={p.setNastaveni} />
 
       <Popisek>Server</Popisek>
       <select className={stylPole} value={p.server}
@@ -94,16 +106,30 @@ export function OvladaciPanel(p: Props) {
         <option value="instant">hned do buy orderů</option>
       </select>
 
-      <button
-        onClick={p.spustitSken}
-        disabled={p.stav.druh === "bezi"}
-        className="mt-4 w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold
-                   text-white hover:bg-blue-700 disabled:opacity-50"
-      >
-        {p.stav.druh === "bezi"
-          ? `Stahuji ceny… ${p.stav.hotovo}/${p.stav.celkem}`
-          : "Stáhnout ceny a spočítat"}
-      </button>
+      {p.stav.druh === "bezi" ? (
+        <div className="mt-4 space-y-2">
+          <div className="rounded-md bg-blue-600/10 px-3 py-2 text-sm">
+            Stahuji ceny… {p.stav.hotovo}/{p.stav.celkem}
+            <div className="mt-1 h-1 overflow-hidden rounded bg-slate-300 dark:bg-slate-700">
+              <div className="h-full bg-blue-600 transition-all"
+                   style={{ width: `${(p.stav.hotovo / Math.max(1, p.stav.celkem)) * 100}%` }} />
+            </div>
+          </div>
+          <button onClick={p.zrusitSken}
+                  className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm
+                             dark:border-slate-700">
+            Zrušit
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={p.spustitSken}
+          className="mt-4 w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold
+                     text-white hover:bg-blue-700"
+        >
+          Stáhnout ceny a spočítat
+        </button>
+      )}
 
       <StavHlaska stav={p.stav} />
 
@@ -142,6 +168,78 @@ export function OvladaciPanel(p: Props) {
 
 function maxStariHodnota(h: number): number {
   return [6, 24, 48, 168, 0].includes(h) ? h : 48;
+}
+
+/**
+ * Zúžení na konkrétní kategorie a odhad délky skenu.
+ *
+ * Odhad je tu proto, že sken vší výbavy trvá ~46 s. Bez varování by
+ * uživatel nevěděl, do čeho jde, a považoval by to za zamrznutí.
+ */
+function VyberKategorii({ nastaveni, setNastaveni }: {
+  nastaveni: NastaveniSkenu;
+  setNastaveni: (n: NastaveniSkenu) => void;
+}) {
+  if (nastaveni.skupina === SUROVINY_ID) return <OdhadSkenu nastaveni={nastaveni} />;
+
+  const dostupne = kategorieSPocty(nastaveni.skupina);
+  if (dostupne.length <= 1) return <OdhadSkenu nastaveni={nastaveni} />;
+
+  const prepni = (kat: string) => {
+    const vybrane = nastaveni.kategorie.includes(kat)
+      ? nastaveni.kategorie.filter((k) => k !== kat)
+      : [...nastaveni.kategorie, kat];
+    setNastaveni({ ...nastaveni, kategorie: vybrane });
+  };
+
+  return (
+    <>
+      <Popisek>
+        Zúžit na kategorie {nastaveni.kategorie.length > 0 && (
+          <button onClick={() => setNastaveni({ ...nastaveni, kategorie: [] })}
+                  className="ml-1 underline">zrušit výběr</button>
+        )}
+      </Popisek>
+      <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
+        {dostupne.map(({ kategorie, pocet }) => {
+          const aktivni = nastaveni.kategorie.includes(kategorie);
+          return (
+            <button key={kategorie} onClick={() => prepni(kategorie)}
+                    className={`rounded border px-1.5 py-0.5 text-xs ${aktivni
+                      ? "border-blue-600 bg-blue-600 text-white"
+                      : "border-slate-300 dark:border-slate-700"}`}>
+              {nazevKategorie(kategorie)} <span className="opacity-60">{pocet}</span>
+            </button>
+          );
+        })}
+      </div>
+      <OdhadSkenu nastaveni={nastaveni} />
+    </>
+  );
+}
+
+function OdhadSkenu({ nastaveni }: { nastaveni: NastaveniSkenu }) {
+  const pocet = potrebnaIds(nastaveni.skupina, nastaveni.kategorie).length;
+  const davky = Math.max(1, Math.ceil(pocet / 170));
+  const vteriny = Math.round(davky * 1.1);
+
+  return (
+    <p className="mt-1 text-xs text-slate-500">
+      {pocet.toLocaleString("cs-CZ")} položek k ocenění ·{" "}
+      <span className={vteriny > 20 ? "text-amber-600 dark:text-amber-400" : ""}>
+        {davky} {davky === 1 ? "dotaz" : davky < 5 ? "dotazy" : "dotazů"}, ~{vteriny} s
+      </span>
+      {nastaveni.skupina !== SUROVINY_ID && (
+        <>
+          <br />
+          {/* Musí to být vidět v UI, ne schované v dokumentaci. */}
+          <span className="text-amber-600 dark:text-amber-400">
+            Počítá se jen základní kvalita — zisk je proto spíš podhodnocený.
+          </span>
+        </>
+      )}
+    </p>
+  );
 }
 
 function StavHlaska({ stav }: { stav: StavSkenu }) {

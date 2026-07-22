@@ -74,6 +74,8 @@ export interface Vylepseni {
 /** Položka tak, jak ji popisují herní data. */
 export interface HerniPolozka {
   zaklad: string;
+  /** Herní název, např. „Expert's Broadsword". Null u nepoužívaných položek. */
+  nazev: string | null;
   druh: Druh;
   tier: number;
   /** Váha jednoho kusu v kg. Enchant ji nemění. */

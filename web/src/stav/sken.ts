@@ -13,7 +13,8 @@ import {
   type Cena, type Enchant, type HerniPolozka, type Konstanty,
   type Lokace, type TypCeny, type VysledekVypoctu, type Vstup,
 } from "@albion/jadro";
-import { refinedKombinace, vaha } from "../data/hra";
+import { refinedKombinace, vybavaKombinace, vaha, type Kombinace } from "../data/hra";
+import { SUROVINY_ID, kategorieSkupiny } from "../data/kategorie";
 import type { SkladCen } from "./skladCen";
 
 export type RezimCeny = "instant" | "order";
@@ -27,6 +28,10 @@ export interface NastaveniSkenu {
   pocetVyrobku: number;
   rezimNakupu: RezimCeny;
   rezimProdeje: RezimCeny;
+  /** Co se skenuje — id skupiny z `kategorie.ts`. */
+  skupina: string;
+  /** Zúžení na konkrétní kategorie ve skupině. Prázdné = celá skupina. */
+  kategorie: string[];
 }
 
 export type StavRadku = "ok" | "chybi-cena" | "podezrele";
@@ -72,20 +77,40 @@ export function typProProdej(rezim: RezimCeny): TypCeny {
 }
 
 /**
+ * Kombinace, které se mají skenovat, podle zvoleného rozsahu.
+ *
+ * @param skupina  id skupiny z `kategorie.ts`, nebo SUROVINY_ID
+ * @param kategorie  nepovinné zúžení na konkrétní kategorie ve skupině
+ */
+export function kombinaceProSken(skupina: string, kategorie?: string[]): Kombinace[] {
+  if (skupina === SUROVINY_ID) return refinedKombinace();
+  const vybrane = kategorie?.length ? kategorie : kategorieSkupiny(skupina);
+  return vybavaKombinace(vybrane);
+}
+
+/**
  * Všechna AODP ID, která sken potřebuje.
  *
- * Množina výstupů a vstupů se PŘEKRÝVÁ — T5 ingot potřebuje T4 ingot,
- * který je sám položkou skenu. Proto množina, ne dva seznamy.
+ * **Sjednocení skenovaných položek a jejich VSTUPŮ.**
+ *
+ * U surovin to nebylo tolik vidět — T5 ingot potřebuje T4 ingot, který je
+ * sám položkou skenu, takže se množiny z velké části překrývaly.
+ * U výbavy se nepřekrývají vůbec: skenuješ meče, ale potřebuješ ceny ingotů
+ * a kůže. Bez vstupů by všechny řádky skončily na „chybí cena".
  */
-export function potrebnaIds(): string[] {
+export function potrebnaIds(skupina: string, kategorie?: string[]): string[] {
   const ids = new Set<string>();
 
-  for (const { polozka, enchant } of refinedKombinace()) {
+  for (const { polozka, enchant } of kombinaceProSken(skupina, kategorie)) {
+    // ID se skládá VÝHRADNĚ přes aodpId — formát se liší podle druhu
+    // (surovina `_LEVEL4@4` vs. výbava `@4`) a skládat ho ručně znamená
+    // chybu při každém novém místě v kódu.
     ids.add(aodpId({ zaklad: polozka.zaklad, enchant: enchant as Enchant }, polozka.druh));
 
     const varianta = polozka.varianty.find((v) => v.enchant === enchant && !v.sFactionTokenem);
     for (const vstup of varianta?.vstupy ?? []) {
-      // Vstup je vždy surovina — i u výbavy jsou vstupy suroviny.
+      // Vstupy receptů jsou vždy suroviny (i u výbavy) nebo artefakty,
+      // které se v datech chovají stejně.
       ids.add(aodpId({ zaklad: vstup.zaklad, enchant: vstup.enchant }, "surovina"));
     }
   }
@@ -111,7 +136,7 @@ export function spocitatSken(
   const typNakup = typProNakup(nastaveni.rezimNakupu);
   const typProdej = typProProdej(nastaveni.rezimProdeje);
 
-  for (const { polozka, enchant } of refinedKombinace()) {
+  for (const { polozka, enchant } of kombinaceProSken(nastaveni.skupina, nastaveni.kategorie)) {
     const e = enchant as Enchant;
     const varianta = polozka.varianty.find((v) => v.enchant === e && !v.sFactionTokenem);
 

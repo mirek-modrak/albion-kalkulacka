@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { HRA, LINKY, MESTA, VERZE_DAT, lokace } from "./data/hra";
+import { HRA, VERZE_DAT, lokace, polozka } from "./data/hra";
 import { SERVERY, nactiCeny, type Server } from "./data/aodp";
+import { SUROVINY_ID } from "./data/kategorie";
 import { SkladCen } from "./stav/skladCen";
 import {
   METRIKY, potrebnaIds, rozlozId, seradit, souhrn, spocitatSken,
@@ -10,16 +11,26 @@ import { OvladaciPanel } from "./ui/OvladaciPanel";
 import { TabulkaSkenu } from "./ui/TabulkaSkenu";
 import { DetailPolozky } from "./ui/DetailPolozky";
 
-/** Lidský název položky. Herní ID typu T5_METALBAR nikomu nic neřekne. */
+/**
+ * Lidský název položky.
+ *
+ * Přednost má herní název z `formatted/items.txt` („Expert's Broadsword"),
+ * protože ten uživatel vidí ve hře. Tier se doplní zvlášť — v herním názvu
+ * je sice zakódovaný slovem („Expert's"), ale porovnávat T4/T5/T6 v tabulce
+ * jde snáz podle čísla.
+ *
+ * Bez tohohle by tabulka ukazovala syrová ID typu `T4_2H_DUALSWORD`.
+ */
 function nazevPolozky(zaklad: string, enchant: number): string {
-  const shoda = /^T(\d)_(.+)$/.exec(zaklad);
-  if (!shoda) return zaklad;
-  const [, tier, zbytek] = shoda;
-  const linka = LINKY.find((l) => l.refined === zbytek || l.raw === zbytek);
-  const jmeno = linka
-    ? (linka.refined === zbytek ? linka.nazev.split(" → ")[1] : linka.nazev.split(" → ")[0])
-    : zbytek!.toLowerCase();
-  return `T${tier} ${jmeno}${enchant > 0 ? `.${enchant}` : ""}`;
+  const p = polozka(zaklad);
+  const shoda = /^T(\d)_/.exec(zaklad);
+  const tier = shoda ? `T${shoda[1]} ` : "";
+  const pripona = enchant > 0 ? `.${enchant}` : "";
+
+  if (p?.nazev) return `${tier}${p.nazev}${pripona}`;
+
+  // Záloha pro položky bez názvu — lepší čitelné ID než prázdno.
+  return `${zaklad}${pripona}`;
 }
 
 type StavSkenu =
@@ -39,6 +50,8 @@ export function App() {
     pocetVyrobku: 100,
     rezimNakupu: "instant",
     rezimProdeje: "order",
+    skupina: SUROVINY_ID,
+    kategorie: [],
   });
   const [metrika, setMetrika] = useState<Metrika>("marze");
   const [maxStari, setMaxStari] = useState<number>(48);
@@ -79,7 +92,7 @@ export function App() {
     setStav({ druh: "bezi", hotovo: 0, celkem: 1 });
 
     try {
-      const ids = potrebnaIds();
+      const ids = potrebnaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
       const radky = await nactiCeny(
         serverRef.current, ids, [nastaveniRef.current.mesto], [1], rizeni.signal,
         (p) => { if (poradi === poradiRef.current) setStav({ druh: "bezi", ...p }); },
@@ -140,6 +153,9 @@ export function App() {
           maxStari={maxStari} setMaxStari={setMaxStari}
           jenZiskove={jenZiskove} setJenZiskove={setJenZiskove}
           stav={stav} spustitSken={spustitSken}
+          // Sken vší výbavy trvá ~46 s — bez možnosti zrušit by uživatel
+          // musel čekat na něco, co si rozmyslel.
+          zrusitSken={() => { prerusRef.current?.abort(); setStav({ druh: "necinny" }); }}
           souhrn={s}
         />
         <TabulkaSkenu

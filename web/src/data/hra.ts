@@ -53,25 +53,44 @@ export const LINKY: Linka[] = [
   { kategorie: "rock", nazev: "Kámen → bloky", koho: "kámen", raw: "ROCK", refined: "STONEBLOCK" },
 ];
 
+export interface Kombinace {
+  polozka: HerniPolozka;
+  enchant: number;
+}
+
+/** Enchanty, pro které daná položka opravdu má recept. */
+function dostupneEnchanty(p: HerniPolozka): number[] {
+  const e = new Set(p.varianty.map((v) => v.enchant));
+  return [...e].sort((a, b) => a - b);
+}
+
 /**
  * Všechny refined suroviny, které existují.
  *
- * Kombinace se generují Z DAT (`maxEnchant`), ne pevným seznamem 0–4 —
- * kámen enchanty nemá a nabízet je by znamenalo shánět ceny neexistujících
- * položek.
+ * Kombinace se generují Z DAT, ne pevným seznamem 0–4 — kámen enchanty nemá
+ * a nabízet je by znamenalo shánět ceny neexistujících položek.
  */
-export function refinedKombinace(): { polozka: HerniPolozka; enchant: number }[] {
-  const vysledek: { polozka: HerniPolozka; enchant: number }[] = [];
+export function refinedKombinace(): Kombinace[] {
+  const vysledek: Kombinace[] = [];
 
   for (const linka of LINKY) {
     for (let tier = 2; tier <= 8; tier++) {
       const p = PODLE_ZAKLADU.get(`T${tier}_${linka.refined}`);
       if (!p) continue;
-      for (let e = 0; e <= p.maxEnchant; e++) {
-        // Varianta pro daný enchant nemusí existovat (enchanty až od T4).
-        if (p.varianty.some((v) => v.enchant === e)) vysledek.push({ polozka: p, enchant: e });
-      }
+      for (const e of dostupneEnchanty(p)) vysledek.push({ polozka: p, enchant: e });
     }
+  }
+  return vysledek;
+}
+
+/** Výbava ve vybraných kategoriích, se všemi dostupnými enchanty. */
+export function vybavaKombinace(kategorie: string[]): Kombinace[] {
+  const patri = new Set(kategorie);
+  const vysledek: Kombinace[] = [];
+
+  for (const p of HRA.polozky) {
+    if (p.druh !== "vybava" || !p.kategorie || !patri.has(p.kategorie)) continue;
+    for (const e of dostupneEnchanty(p)) vysledek.push({ polozka: p, enchant: e });
   }
   return vysledek;
 }

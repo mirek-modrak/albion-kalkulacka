@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { rozdelDoDavek } from "../src/data/aodp";
 import { hodnotaMetriky, potrebnaIds, seradit, souhrn, type RadekSkenu } from "../src/stav/sken";
+import { SKUPINY, SUROVINY_ID, kategorieSPocty } from "../src/data/kategorie";
 import type { HerniPolozka, VysledekVypoctu } from "@albion/jadro";
 
 describe("rozdelDoDavek — dělení podle DÉLKY, ne podle počtu", () => {
@@ -47,8 +48,50 @@ describe("rozdelDoDavek — dělení podle DÉLKY, ne podle počtu", () => {
   });
 });
 
-describe("potrebnaIds", () => {
-  const ids = potrebnaIds();
+describe("potrebnaIds — výbava", () => {
+  const zbrane = potrebnaIds("zbrane");
+
+  it("obsahuje samotné zbraně", () => {
+    expect(zbrane).toContain("T5_MAIN_SWORD");
+  });
+
+  it("VŽDY obsahuje i vstupy, které do výběru nepatří", () => {
+    // Nejdůležitější test F4. Kdyby vstupy chyběly, všechny řádky by
+    // skončily na „chybí cena" — sken zbraní nestahuje ceny surovin,
+    // protože suroviny nejsou zbraně.
+    expect(zbrane).toContain("T5_METALBAR");
+    expect(zbrane).toContain("T5_LEATHER");
+  });
+
+  it("enchantovaná výbava má jiný tvar ID než suroviny", () => {
+    // Výbava: @n bez _LEVELn. Surovina: _LEVELn@n.
+    expect(zbrane).toContain("T5_MAIN_SWORD@1");
+    expect(zbrane).not.toContain("T5_MAIN_SWORD_LEVEL1@1");
+    expect(zbrane).toContain("T5_METALBAR_LEVEL1@1");
+  });
+
+  it("zúžení na jednu kategorii zmenší rozsah", () => {
+    const meceOnly = potrebnaIds("zbrane", ["sword"]);
+    expect(meceOnly.length).toBeLessThan(zbrane.length);
+    expect(meceOnly).toContain("T5_MAIN_SWORD");
+    expect(meceOnly.some((i) => i.includes("BOW"))).toBe(false);
+    // Vstupy musí zůstat i při zúžení.
+    expect(meceOnly).toContain("T5_METALBAR");
+  });
+
+  it("bez duplicit — víc zbraní sdílí tytéž vstupy", () => {
+    expect(new Set(zbrane).size).toBe(zbrane.length);
+  });
+
+  it("brnění je jiná množina než zbraně", () => {
+    const brneni = potrebnaIds("brneni");
+    expect(brneni).toContain("T5_HEAD_PLATE_SET1");
+    expect(brneni).not.toContain("T5_MAIN_SWORD");
+  });
+});
+
+describe("potrebnaIds — suroviny", () => {
+  const ids = potrebnaIds(SUROVINY_ID);
 
   it("obsahuje výstupy i jejich vstupy", () => {
     expect(ids).toContain("T5_METALBAR");
@@ -77,7 +120,7 @@ describe("potrebnaIds", () => {
 
 // ── Pomocné pro testy řazení ────────────────────────────────
 const prazdnaPolozka = (zaklad: string): HerniPolozka => ({
-  zaklad, druh: "surovina", tier: 5, vaha: 1, itemValue: 32,
+  zaklad, nazev: null, druh: "surovina", tier: 5, vaha: 1, itemValue: 32,
   kategorie: "ore", maxEnchant: 0, varianty: [], vylepseni: [],
 });
 
@@ -113,6 +156,31 @@ describe("řazení podle metriky", () => {
       expect(seradit(radky, m).at(-1)!.nazev).toBe("BEZ_CENY");
       expect(hodnotaMetriky(radek("X", null), m)).toBe(-Infinity);
     }
+  });
+});
+
+describe("skupiny kategorií", () => {
+  it("každá skupina kromě surovin má aspoň jednu existující kategorii", () => {
+    for (const s of SKUPINY) {
+      if (s.id === SUROVINY_ID) continue;
+      expect(kategorieSPocty(s.id).length,
+        `skupina ${s.id} nemá v datech žádnou kategorii`).toBeGreaterThan(0);
+    }
+  });
+
+  it("žádná kategorie nepatří do dvou skupin naráz", () => {
+    const videno = new Map<string, string>();
+    for (const s of SKUPINY) {
+      for (const k of s.kategorie) {
+        expect(videno.has(k), `${k} je i ve skupině ${videno.get(k)}`).toBe(false);
+        videno.set(k, s.id);
+      }
+    }
+  });
+
+  it("sken jedné kategorie zbraní se vejde do jednoho dotazu", () => {
+    const davky = rozdelDoDavek(potrebnaIds("zbrane", ["sword"]), 200);
+    expect(davky.length).toBeLessThanOrEqual(2);
   });
 });
 
