@@ -9,11 +9,20 @@ a převoz. Cílem je odpovědět na otázku **„kde se právě teď nejvíc vyd
 
 ```bash
 npm install
-npm test
+npm run dev
 ```
 
-Prototyp (funkční, ověřený): otevři [prototyp.html](prototyp.html) dvojklikem.
-Nic se neinstaluje, ceny si tahá sám z AODP.
+Otevře se na `http://localhost:5180`. Vyber město, klikni na
+**Stáhnout ceny a spočítat** — do pár vteřin uvidíš pořadí toho,
+co se právě teď nejvíc vyplatí refinovat.
+
+```bash
+npm test        # 134 testů
+npm run build   # produkční build
+```
+
+Prototyp (starší, ale funkční): [prototyp.html](prototyp.html) otevři dvojklikem.
+Nic se neinstaluje.
 
 ---
 
@@ -24,6 +33,10 @@ jadro/          herní matematika — čisté funkce, BEZ závislostí
   src/          typy, identita položek, bonusy, recepty, výpočet
   data/         hra.json — vygenerovaná herní data (VERZOVÁNO)
   test/         zlaté vektory
+web/            aplikace — React + Vite + Tailwind
+  src/data/     načtení herních dat, klient AODP
+  src/stav/     sklad cen, logika skenu
+  src/ui/       ovládací panel, tabulka
 nastroje/       generátor herních dat z ao-bin-dumps
 docs/           průzkum, architektura, funkční specifikace
 prototyp.html   samostatný prototyp refiningu
@@ -40,8 +53,10 @@ vzorce existují jen jednou.
 
 | Příkaz | Co dělá |
 |---|---|
-| `npm test` | zlaté vektory (119 testů) |
+| `npm run dev` | vývojový server na portu 5180 |
+| `npm test` | zlaté vektory (134 testů) |
 | `npm run kontrola` | typová kontrola |
+| `npm run build` | produkční build |
 | `npm run generuj` | **znovu stáhne herní data** z ao-bin-dumps |
 
 ### Kdy spustit `npm run generuj`
@@ -92,8 +107,8 @@ a ta se **musí** kontrolovat.
 | Fáze | Co | Stav |
 |---|---|---|
 | F1 | `jadro/` + zlaté vektory + generátor | ✅ hotovo |
-| F2 | web — sken surovin | další na řadě |
-| F3 | detail položky | |
+| F2 | web — sken surovin | ✅ hotovo |
+| F3 | detail položky (proklik ze skenu) | další na řadě |
 | F4 | sken předmětů po kategoriích | |
 | F5 | srovnání měst, zisk/kg, nosnost mountu | |
 | F6 | koupit vs. vyrobit | |

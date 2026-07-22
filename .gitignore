@@ -9,3 +9,4 @@ dist/
 
 # POZOR: jadro/data/hra.json se VERZUJE ZÁMĚRNĚ.
 # Build nesmí záviset na síti — viz docs/f1-plan.md, vada 2.
+dist/
