@@ -58,6 +58,32 @@ navrhovala 10× větší zásilky, než se reálně vejdou.
 
 ---
 
+### 3. Caerleon je zvláštní případ — nemíchat s ostatními městy
+
+**Stav:** zapsáno 2026-07-22, řešit později (Mirek: *„nyní ale asi řešit nechci"*)
+
+Mirek: *„Caerleon je speciální. Tam vykopává suroviny server a ne hráči,
+takže tam vznikají nejlepší příležitosti — ale je to nejvíc riskantní.
+Proto jsem uvažoval dát to bokem."*
+
+**Proč to není maličkost:** F5 ukázala, že Caerleon vyhrává nejčastěji
+(10× z 29 ziskových). Kalkulačka ho tedy staví nahoru, ale **nemodeluje
+riziko cesty** — Caerleon leží uprostřed černé zóny a náklad se dá ztratit.
+
+Srovnávat ho s královskými městy 1:1 je proto zavádějící: ukazuje se
+jako nejlepší, protože se počítá jen cena, ne pravděpodobnost, že tam
+vůbec dojedeš.
+
+**Možná řešení (rozhodnout, až na to dojde):**
+- oddělit Caerleon do samostatné sekce, ne do společného pořadí
+- přidat uživatelský vstup „očekávaná ztráta zásilek v %" a započítat ho
+- označit řádky, kde vyhrává Caerleon, jako rizikové
+
+Souvisí s [S5/S6](funkcni-specifikace.md) (převoz) — riziko trasy je tam
+už vedeno jako věc, která není v datech a musí být odhadem.
+
+---
+
 ## 🔵 Nízká priorita
 
 ### 3. Premiová sazba daně 4 %
