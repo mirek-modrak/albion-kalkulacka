@@ -17,7 +17,7 @@ Otevře se na `http://localhost:5180`. Vyber město, klikni na
 co se právě teď nejvíc vyplatí refinovat.
 
 ```bash
-npm test        # 198 testů
+npm test        # 222 testů
 npm run build   # produkční build
 ```
 
@@ -54,7 +54,7 @@ vzorce existují jen jednou.
 | Příkaz | Co dělá |
 |---|---|
 | `npm run dev` | vývojový server na portu 5180 |
-| `npm test` | zlaté vektory (198 testů) |
+| `npm test` | zlaté vektory (222 testů) |
 | `npm run kontrola` | typová kontrola |
 | `npm run build` | produkční build |
 | `npm run generuj` | **znovu stáhne herní data** z ao-bin-dumps |
@@ -97,7 +97,7 @@ a ta se **musí** kontrolovat.
 | [vyzkum-01-mechaniky.md](docs/vyzkum-01-mechaniky.md) | herní mechaniky, daně, bonusy |
 | [vyzkum-02-herni-data.md](docs/vyzkum-02-herni-data.md) | receptury z herních dat |
 | [vyzkum-03-konstanty.md](docs/vyzkum-03-konstanty.md) | konstanty z `gamedata.xml` |
-| [f1-plan.md](docs/f1-plan.md) … [f5-plan.md](docs/f5-plan.md) | plány a oponentury jednotlivých fází |
+| [f1-plan.md](docs/f1-plan.md) … [f7-plan.md](docs/f7-plan.md) | plány a oponentury jednotlivých fází |
 | [todo.md](docs/todo.md) | otevřené otázky |
 
 ---
@@ -112,7 +112,7 @@ a ta se **musí** kontrolovat.
 | F4 | sken předmětů po kategoriích | ✅ hotovo |
 | F5 | nejlepší příležitosti napříč všemi městy | ✅ hotovo |
 | F6 | graf ceny a objemu v čase | ✅ hotovo |
-| F7 | převoz: srovnání měst, zisk/kg, nosnost mountu | ← další |
-| F8 | koupit vs. vyrobit | |
+| F7 | převoz: srovnání měst, zisk/kg, nosnost mountu | ✅ hotovo |
+| F8 | koupit vs. vyrobit | ← další |
 | F9 | nasazení na VPS | |
 | F10 | hlídání a upozornění | |

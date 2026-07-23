@@ -58,9 +58,23 @@ navrhovala 10× větší zásilky, než se reálně vejdou.
 
 ---
 
-### 3. Caerleon je zvláštní případ — nemíchat s ostatními městy
+### 3. Caerleon je zvláštní případ — ✅ VYŘEŠENO ve F7
 
-**Stav:** zapsáno 2026-07-22, řešit později (Mirek: *„nyní ale asi řešit nechci"*)
+**Stav:** vyřešeno 2026-07-22 v rámci [F7](f7-plan.md).
+
+Řešení: vstup **„očekávaná ztráta zásilek"** (0–50 %), který se odečítá
+z tržby. Trasy přes Caerleon jsou navíc označené jako `riziko`.
+
+Ověřeno, že to funguje: při 0 % ztráty vede Caerleon, při 50 % ho přebere
+Brecilien. Bez toho vstupu by kalkulačka stavěla nejrizikovější trasu
+nahoru, protože počítá jen ceny.
+
+Zbývá otevřené: riziko je zatím **jediná hodnota pro všechny trasy**.
+Kdyby bylo potřeba rozlišovat (Caerleon rizikovější než cesta mezi
+královskými městy), musel by být odhad per trasa.
+
+<details>
+<summary>Původní zápis</summary>
 
 Mirek: *„Caerleon je speciální. Tam vykopává suroviny server a ne hráči,
 takže tam vznikají nejlepší příležitosti — ale je to nejvíc riskantní.
@@ -81,6 +95,8 @@ vůbec dojedeš.
 
 Souvisí s [S5/S6](funkcni-specifikace.md) (převoz) — riziko trasy je tam
 už vedeno jako věc, která není v datech a musí být odhadem.
+
+</details>
 
 ---
 

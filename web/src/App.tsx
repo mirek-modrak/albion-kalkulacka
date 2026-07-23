@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { HRA, MESTA, VERZE_DAT, lokace, polozka } from "./data/hra";
 import { SERVERY, nactiCeny, type Server } from "./data/aodp";
 import { SUROVINY_ID } from "./data/kategorie";
+import { VYCHOZI_MOUNT, mount } from "./data/mounty";
 import { nacti, uloz, zapomen } from "./stav/uloziste";
 import { SkladCen } from "./stav/skladCen";
 import {
@@ -13,6 +14,9 @@ import { TabulkaSkenu } from "./ui/TabulkaSkenu";
 import { DetailPolozky } from "./ui/DetailPolozky";
 import { TabulkaPrilezitosti } from "./ui/TabulkaPrilezitosti";
 import { spocitatNapricMesty, souhrnPrilezitosti } from "./stav/napricMesty";
+import { seraditPrevozy, souhrnPrevozu, spocitatPrevozy, type MetrikaPrevozu } from "./stav/prevoz";
+import { TabulkaPrevozu } from "./ui/TabulkaPrevozu";
+import { PanelPrevozu } from "./ui/PanelPrevozu";
 
 /**
  * Lidský název položky.
@@ -73,8 +77,20 @@ export function App() {
   // ukazoval by po úpravě ceny stará čísla — řádky se při přepočtu vytvářejí znovu.
   const [detailKlic, setDetailKlic] = useState<string | null>(null);
 
-  // Dva pohledy na totéž: jedno město podrobně, nebo všechna naráz.
-  const [rezim, setRezim] = useState<"mesto" | "prilezitosti">("prilezitosti");
+  // Tři různé otázky, ne tři činnosti:
+  //  - příležitosti: co vyrobit a kde
+  //  - město: totéž podrobně pro jedno město
+  //  - převoz: co koupit tady a prodat jinde (arbitráž, jiný výpočet)
+  const [rezim, setRezim] = useState<"mesto" | "prilezitosti" | "prevoz">("prilezitosti");
+
+  const [nastaveniPrevozu, setNastaveniPrevozu] = useState({
+    vychoziMesto: "Thetford",
+    nosnostKg: mount(VYCHOZI_MOUNT)?.kg ?? 4116,
+    // Nenulová výchozí hodnota, ať se na riziko nezapomene. Není v datech,
+    // je to odhad podle trasy.
+    ztrataZasilek: 0.05,
+  });
+  const [metrikaPrevozu, setMetrikaPrevozu] = useState<MetrikaPrevozu>("ziskNaKg");
 
   // Sklad cen přežívá překreslení. Ceny se sbírají napříč skeny —
   // ruční zadání ani starší stažení se nemají ztrácet.
@@ -120,9 +136,11 @@ export function App() {
       // V režimu příležitostí se tahají všechna města naráz. Nestojí to víc
       // dotazů — AODP násobí odpověď přes `locations`, ne počet dotazů
       // (ověřeno: 205 ID × 7 měst = 1 435 cen v jednom dotazu, 0,33 s).
-      const mesta = rezimRef.current === "prilezitosti"
-        ? MESTA.map((m) => m.nazev)
-        : [nastaveniRef.current.mesto];
+      // Převoz i příležitosti potřebují všechna města — u převozu proto,
+      // že se porovnávají cílová města mezi sebou.
+      const mesta = rezimRef.current === "mesto"
+        ? [nastaveniRef.current.mesto]
+        : MESTA.map((m) => m.nazev);
 
       const radky = await nactiCeny(
         serverRef.current, ids, mesta, [1], rizeni.signal,
@@ -179,6 +197,25 @@ export function App() {
     return v;
   }, [prilezitosti, jenZiskove, maxStari]);
 
+  // Převozní trasy. Počítá se jen v odpovídajícím režimu.
+  const prevozy = useMemo(
+    () => rezim !== "prevoz" ? [] : seraditPrevozy(
+      spocitatPrevozy(
+        { ...nastaveni, ...nastaveniPrevozu },
+        skladRef.current, HRA.konstanty, nazevPolozky,
+      ),
+      metrikaPrevozu,
+    ),
+    [rezim, nastaveni, nastaveniPrevozu, verzeCen, metrikaPrevozu],
+  );
+
+  const filtrovanePrevozy = useMemo(() => {
+    let v = prevozy;
+    if (jenZiskove) v = v.filter((r) => (r.vysledek?.zisk ?? 0) > 0);
+    if (maxStari > 0) v = v.filter((r) => r.stariHodin === null || r.stariHodin <= maxStari);
+    return v.slice(0, 300);   // 690 řádků nikdo neprojde
+  }, [prevozy, jenZiskove, maxStari]);
+
   // Uložit po každé změně cen nebo nastavení. Samotný zápis je odložený,
   // aby se neukládalo při každém úhozu do políčka.
   useEffect(() => {
@@ -227,8 +264,9 @@ export function App() {
       <div className="mb-4 inline-flex rounded-lg border border-slate-300 p-0.5
                       dark:border-slate-700">
         {([
-          ["prilezitosti", "Nejlepší příležitosti", `napříč všemi ${MESTA.length} městy`],
+          ["prilezitosti", "Nejlepší příležitosti", "co vyrobit a kde"],
           ["mesto", "Sken jednoho města", "podrobněji"],
+          ["prevoz", "Převoz", "co koupit tady a prodat jinde"],
         ] as const).map(([id, popis, dovetek]) => (
           <button key={id} onClick={() => { setRezim(id); setDetailKlic(null); }}
                   className={`rounded-md px-3 py-1.5 text-sm ${rezim === id
@@ -259,7 +297,17 @@ export function App() {
           maUlozeneCeny={skladRef.current.pocet > 0}
           souhrn={s}
         />
-        {rezim === "prilezitosti" ? (
+        {rezim === "prevoz" ? (
+          <div className="space-y-3">
+            <PanelPrevozu
+              nastaveni={nastaveniPrevozu} setNastaveni={setNastaveniPrevozu}
+              metrika={metrikaPrevozu} setMetrika={setMetrikaPrevozu}
+              souhrn={souhrnPrevozu(prevozy)}
+            />
+            <TabulkaPrevozu radky={filtrovanePrevozy} metrika={metrikaPrevozu}
+                            vychoziMesto={nastaveniPrevozu.vychoziMesto} />
+          </div>
+        ) : rezim === "prilezitosti" ? (
           <div className="space-y-3">
             {sP.podleMest.length > 0 && (
               <div className="rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-950">
