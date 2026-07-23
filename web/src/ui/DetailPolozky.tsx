@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import type { TypCeny } from "@albion/jadro";
+import type { Server } from "../data/aodp";
 import type { RadekSkenu, NastaveniSkenu } from "../stav/sken";
 import { typProNakup, typProProdej } from "../stav/sken";
 import type { SkladCen } from "../stav/skladCen";
 import { barvaHodnoty, barvaStari, cislo, procenta, seZnamenkem, stari } from "./format";
+import { SekceHistorie } from "./SekceHistorie";
 
 interface Props {
   radek: RadekSkenu;
@@ -15,6 +17,8 @@ interface Props {
   nazevPolozky: (zaklad: string, enchant: number) => string;
   /** Srovnání měst — jen v režimu příležitostí. */
   srovnaniMest?: { mesto: string; radek: RadekSkenu }[];
+  /** Server — historie se tahá pro něj. */
+  server: Server;
   /** Které město se právě zobrazuje v rozpadu. */
   zobrazeneMesto?: string;
 }
@@ -124,6 +128,18 @@ export function DetailPolozky(p: Props) {
             popis={`Prodej — ${radek.nazev}`}
             mesto={mesto} zaklad={radek.polozka.zaklad} enchant={radek.enchant}
             typ={typProdej} sklad={sklad} poZmene={p.poZmeneCeny}
+          />
+        </Sekce>
+
+        {/* Historie je MIMO větev „má výsledek".
+            Když chybí aktuální cena, je to jediné, co o položce víme —
+            a právě tam je nejužitečnější. */}
+        <Sekce nadpis="Vývoj za 30 dní">
+          <SekceHistorie
+            polozka={radek.polozka} enchant={radek.enchant}
+            mesto={mesto} server={p.server}
+            aktualniCena={sklad.ziskej(mesto, radek.polozka.zaklad, radek.enchant, typProdej)
+              ?.hodnota ?? null}
           />
         </Sekce>
 

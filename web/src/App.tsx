@@ -294,6 +294,7 @@ export function App() {
           srovnaniMest={detailPrilezitost.vsechnaMesta.map((v) => ({
             mesto: v.mesto, radek: v.radek,
           }))}
+          server={server}
           nastaveni={nastaveni}
           sklad={skladRef.current}
           nazevPolozky={nazevPolozky}
@@ -305,6 +306,7 @@ export function App() {
       {rezim === "mesto" && detail && (
         <DetailPolozky
           radek={detail}
+          server={server}
           nastaveni={nastaveni}
           sklad={skladRef.current}
           nazevPolozky={nazevPolozky}

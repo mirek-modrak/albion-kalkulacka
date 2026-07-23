@@ -130,6 +130,56 @@ export async function nactiCeny(
   return vysledek;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Historie cen a objemů
+// ─────────────────────────────────────────────────────────────
+
+/** Jeden den historie. */
+export interface BodHistorie {
+  /** Průměrná cena USKUTEČNĚNÝCH obchodů — ne cena z order booku. */
+  avg_price: number;
+  /** Kolik kusů se ten den zobchodovalo. Nejcennější údaj z celého API. */
+  item_count: number;
+  timestamp: string;
+}
+
+export interface SerieHistorie {
+  location: string;
+  item_id: string;
+  quality: number;
+  data: BodHistorie[];
+}
+
+/**
+ * Stáhne 30denní historii pro jednu položku ve více městech.
+ *
+ * Volá se **až na vyžádání** (otevření detailu), ne při skenu —
+ * sken už dělá 2–23 dotazů a historie pro každou položku by limit rozbila.
+ *
+ * @param casovaOsa 1 = hodinově, 6 = po šesti hodinách, 24 = denně
+ */
+export async function nactiHistorii(
+  server: Server,
+  itemId: string,
+  mesta: string[],
+  casovaOsa: 1 | 6 | 24 = 24,
+  signal?: AbortSignal,
+): Promise<SerieHistorie[]> {
+  await pockejNaRadu();
+
+  const url = `https://${server}.albion-online-data.com/api/v2/stats/history/`
+    + `${itemId}.json?locations=${mesta.map(encodeURIComponent).join(",")}`
+    + `&time-scale=${casovaOsa}&qualities=1`;
+
+  const odpoved = await fetch(url, { signal });
+  if (odpoved.status === 429) {
+    throw new ChybaAodp("AODP odmítlo dotaz kvůli limitu. Zkus to za chvíli.", 429);
+  }
+  if (!odpoved.ok) throw new ChybaAodp(`AODP vrátilo HTTP ${odpoved.status}`, odpoved.status);
+
+  return (await odpoved.json()) as SerieHistorie[];
+}
+
 /**
  * Sentinelový záznam = položka nebyla nikdy naskenována.
  * AODP vrací datum 0001-01-01 a cenu 0. Brát to jako cenu by dalo
