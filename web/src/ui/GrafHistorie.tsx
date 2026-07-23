@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { DenHistorie } from "../stav/historie";
 import { cislo } from "./format";
 
@@ -5,6 +6,21 @@ interface Props {
   dny: DenHistorie[];
   /** Popis pro čtečky i pro případ, že graf nedává smysl. */
   popis: string;
+  /**
+   * Týdenní medián skutečných obchodů — pro odchylku v odečtu.
+   *
+   * Předává se ZVENČÍ, nepočítá se tady. Je to tentýž medián, jaký ukazuje
+   * sekce „Skutečné obchody" o kus výš; kdyby si ho graf počítal sám,
+   * dřív nebo později by se rozešly a uživatel by v jednom okně viděl
+   * dvě různá čísla pro totéž.
+   */
+  medianTyden?: number | null;
+}
+
+/** „2026-07-19" → „19. 7." */
+function denMesic(datum: string): string {
+  const [, m, d] = datum.split("-");
+  return `${Number(d)}. ${Number(m)}.`;
 }
 
 const SIRKA = 640;
@@ -30,7 +46,11 @@ function zkratka(n: number): string {
  * Dvě osy, protože cena a objem mají řádově jiný rozsah (naměřeno 15×).
  * V jednom měřítku by objem cenu úplně zploštil.
  */
-export function GrafHistorie({ dny, popis }: Props) {
+export function GrafHistorie({ dny, popis, medianTyden }: Props) {
+  // Null = uživatel nikam neukazuje. Výchozí odečet je pak poslední den
+  // s daty, ať pruh pod grafem nesvítí prázdnotou.
+  const [vybrany, setVybrany] = useState<number | null>(null);
+
   const ceny = dny.map((d) => d.cena).filter((c): c is number => c !== null);
   const objemy = dny.map((d) => d.objem).filter((o): o is number => o !== null);
 
@@ -73,9 +93,44 @@ export function GrafHistorie({ dny, popis }: Props) {
 
   const sirkaSloupce = Math.max(1.5, (PLOCHA_W / dny.length) * 0.6);
 
+  // ── Odečet ────────────────────────────────────────────────
+  //
+  // Pruh POD grafem, ne bublina u kurzoru. Graf je v modálním okně a je
+  // vysoký 180 bodů — bublina by u krajů vylézala ven a musela by se
+  // překlápět. Pruh je pořád na stejném místě, nic nepřekrývá a funguje
+  // stejně na dotyku, kde najetí myší neexistuje.
+  const posledniSDaty = dny.reduce(
+    (nalezeny, d, i) => (d.cena !== null ? i : nalezeny), -1,
+  );
+  const ukazovany = vybrany ?? (posledniSDaty >= 0 ? posledniSDaty : null);
+  const den = ukazovany !== null ? dny[ukazovany] : undefined;
+
+  /**
+   * Index dne pod ukazatelem.
+   *
+   * Počítá se z polohy, ne z třiceti neviditelných obdélníků — tím pádem
+   * se trefíš i mezi sloupce. Bod na čáře má poloměr necelé 2 body,
+   * do toho by se myší strefoval málokdo.
+   */
+  function denPodUkazatelem(e: React.PointerEvent<SVGSVGElement>): number {
+    const r = e.currentTarget.getBoundingClientRect();
+    if (r.width === 0) return 0;
+    const vJednotkach = ((e.clientX - r.left) / r.width) * SIRKA;
+    const podil = (vJednotkach - OKRAJ.vlevo) / PLOCHA_W;
+    const i = Math.round(podil * Math.max(1, dny.length - 1));
+    return Math.min(dny.length - 1, Math.max(0, i));
+  }
+
   return (
     <figure className="m-0">
-      <svg viewBox={`0 0 ${SIRKA} ${VYSKA}`} className="w-full" role="img" aria-label={popis}>
+      <svg viewBox={`0 0 ${SIRKA} ${VYSKA}`} className="w-full" role="img" aria-label={popis}
+           // Myš scrubuje průběžně, dotyk vybírá ťuknutím. Kdyby se na dotyku
+           // reagovalo i na tažení, nešlo by přes graf odscrollovat okno.
+           onPointerMove={(e) => {
+             if (e.pointerType === "mouse") setVybrany(denPodUkazatelem(e));
+           }}
+           onPointerDown={(e) => setVybrany(denPodUkazatelem(e))}
+           onPointerLeave={() => setVybrany(null)}>
         {/* Vodorovné vodicí čáry */}
         {[0, 0.5, 1].map((p) => (
           <line key={p}
@@ -106,6 +161,23 @@ export function GrafHistorie({ dny, popis }: Props) {
                   className="fill-blue-600 dark:fill-blue-400" />
         ))}
 
+        {/* Zvolený den — svislá čára přes celý graf, ať je jasné,
+            který sloupec se zrovna čte. Kreslí se AŽ TEĎ, aby vedla
+            přes sloupce i čáru, ne pod nimi. */}
+        {ukazovany !== null && (
+          <>
+            <line x1={x(ukazovany)} x2={x(ukazovany)}
+                  y1={OKRAJ.nahore} y2={OKRAJ.nahore + PLOCHA_H}
+                  className="stroke-slate-400/70 dark:stroke-slate-500/70"
+                  strokeWidth={1} strokeDasharray="3 2" />
+            {den?.cena !== null && den?.cena !== undefined && (
+              <circle cx={x(ukazovany)} cy={yCena(den.cena)} r={4}
+                      className="fill-blue-600 stroke-white dark:fill-blue-400
+                                 dark:stroke-slate-900" strokeWidth={1.5} />
+            )}
+          </>
+        )}
+
         {/* Popisky os */}
         <text x={OKRAJ.vlevo - 6} y={OKRAJ.nahore + 4} textAnchor="end"
               className="fill-blue-600 text-[10px] dark:fill-blue-400">{zkratka(maxC)}</text>
@@ -123,10 +195,68 @@ export function GrafHistorie({ dny, popis }: Props) {
               className="fill-slate-400 text-[10px]">{dny.at(-1)?.datum.slice(5)}</text>
       </svg>
 
-      <figcaption className="mt-1 flex justify-between text-[11px] text-slate-500">
-        <span className="text-blue-600 dark:text-blue-400">— průměrná cena obchodů</span>
-        <span>▮ zobchodovaný objem</span>
+      <figcaption className="mt-1">
+        {/* Odečet zvoleného dne */}
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-md
+                        bg-slate-100 px-2 py-1.5 text-sm dark:bg-slate-950">
+          {den ? (
+            <>
+              <b className="tabular-nums">{denMesic(den.datum)}</b>
+              {/* Chybějící den je „bez dat", NIKDY nula. Nula by tvrdila,
+                  že se ten den neobchodovalo — a to nevíme, AODP je
+                  crowdsourcované a den prostě nemusel nikdo naskenovat. */}
+              <span>
+                <span className="text-xs text-slate-500">cena </span>
+                {den.cena !== null
+                  ? <b className="tabular-nums text-blue-600 dark:text-blue-400">
+                      {cislo(den.cena)}
+                    </b>
+                  : <span className="text-slate-400">bez dat</span>}
+              </span>
+              <span>
+                <span className="text-xs text-slate-500">objem </span>
+                {den.objem !== null
+                  ? <b className="tabular-nums">{cislo(den.objem)} ks</b>
+                  : <span className="text-slate-400">bez dat</span>}
+              </span>
+              <OdchylkaDne cena={den.cena} median={medianTyden ?? null} />
+              {vybrany === null && (
+                <span className="text-xs text-slate-400">poslední den s daty</span>
+              )}
+            </>
+          ) : (
+            <span className="text-slate-400">Najeď myší na graf</span>
+          )}
+        </div>
+
+        <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+          <span className="text-blue-600 dark:text-blue-400">— průměrná cena obchodů</span>
+          <span>▮ zobchodovaný objem</span>
+        </div>
       </figcaption>
     </figure>
+  );
+}
+
+/**
+ * Odchylka dne od týdenního mediánu.
+ *
+ * Samotné číslo ceny neřekne, jestli je vysoké — proto tenhle údaj.
+ * Do ±10 % je to normální kolísání a barví se šedě, ať odznak nekřičí
+ * u každého dne.
+ */
+function OdchylkaDne({ cena, median }: { cena: number | null; median: number | null }) {
+  if (cena === null || median === null || median <= 0) return null;
+
+  const o = (cena - median) / median;
+  const vyrazna = Math.abs(o) > 0.1;
+
+  return (
+    <span title="Proti mediánu skutečných obchodů za poslední týden"
+          className={`text-xs ${vyrazna
+            ? (o > 0 ? "text-amber-600 dark:text-amber-400" : "text-blue-600 dark:text-blue-400")
+            : "text-slate-500"}`}>
+      {o >= 0 ? "+" : "−"}{cislo(Math.abs(o) * 100, 0)} % proti mediánu
+    </span>
   );
 }

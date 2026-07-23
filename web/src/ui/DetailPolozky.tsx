@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { TypCeny } from "@albion/jadro";
 import type { Server } from "../data/aodp";
 import type { Lokace } from "@albion/jadro";
@@ -48,11 +48,27 @@ const POPIS_TYPU: Record<TypCeny, string> = {
 
 export function DetailPolozky(p: Props) {
   // Zavření klávesou Escape — samotný křížek nestačí.
+  // Závislost je `p.zavrit`, ne celé `p`: objekt props je při každém
+  // překreslení nový, takže by se posluchač zbytečně přepojoval pořád dokola.
   useEffect(() => {
     const naKlavesu = (e: KeyboardEvent) => { if (e.key === "Escape") p.zavrit(); };
     window.addEventListener("keydown", naKlavesu);
     return () => window.removeEventListener("keydown", naKlavesu);
-  }, [p]);
+  }, [p.zavrit]);
+
+  /**
+   * Začalo kliknutí na pozadí?
+   *
+   * VADA, kterou to řeší: `click` se posílá SPOLEČNÉMU RODIČI stisku
+   * a puštění tlačítka. Kdo označí cenu v poli tažením myši a pustí
+   * tlačítko mimo okno, vyrobí `click` mířený na pozadí — a okno se
+   * zavřelo uprostřed přepisování ceny. Kontrola `e.target === currentTarget`
+   * sama nestačí, protože v tom případě pozadí SKUTEČNĚ je cílem.
+   *
+   * Týká se to jakéhokoli tažení uvnitř okna, nejen políček s cenou —
+   * i označení čísla, které si chceš zkopírovat.
+   */
+  const zacatekNaPozadi = useRef(false);
 
   const { radek, nastaveni, sklad } = p;
   const v = radek.vysledek;
@@ -81,7 +97,11 @@ export function DetailPolozky(p: Props) {
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto
                  bg-black/50 p-4 sm:p-8"
-      onClick={p.zavrit}                                   // zavření kliknutím mimo
+      // Zavře se jen tehdy, když kliknutí na pozadí i ZAČALO na pozadí.
+      onPointerDown={(e) => { zacatekNaPozadi.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && zacatekNaPozadi.current) p.zavrit();
+      }}
     >
       <div
         className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl
@@ -208,6 +228,9 @@ export function DetailPolozky(p: Props) {
           <SekceHistorie
             polozka={radek.polozka} enchant={radek.enchant}
             mesto={mistoProdeje} server={p.server}
+            // Tentýž medián, jaký ukazuje sekce „Skutečné obchody" —
+            // dvě čísla pro totéž v jednom okně by mátla.
+            medianTyden={radek.likvidita?.souhrn.medianTyden ?? null}
             aktualniCena={sklad.ziskej(
               mistoProdeje, radek.polozka.zaklad, radek.enchant, typProdej,
             )?.hodnota ?? null}

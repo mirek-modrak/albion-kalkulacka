@@ -12,6 +12,13 @@ interface Props {
   server: Server;
   /** Aktuální cena z order booku — pro srovnání s 30denním průměrem. */
   aktualniCena: number | null;
+  /**
+   * Týdenní medián ze skladu historie — pro odečet v grafu.
+   *
+   * Propouští se z detailu, aby to bylo TOTÉŽ číslo, jaké ukazuje sekce
+   * „Skutečné obchody". Graf si ho záměrně nepočítá sám.
+   */
+  medianTyden?: number | null;
 }
 
 type Stav =
@@ -59,7 +66,8 @@ export function SekceHistorie(p: Props) {
 
   return (
     <>
-      <GrafHistorie dny={h.dny} popis={`Vývoj ceny a objemu v ${p.mesto} za 30 dní`} />
+      <GrafHistorie dny={h.dny} medianTyden={p.medianTyden}
+                    popis={`Vývoj ceny a objemu v ${p.mesto} za 30 dní`} />
 
       <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
         <Udaj popis="Průměrná cena"
