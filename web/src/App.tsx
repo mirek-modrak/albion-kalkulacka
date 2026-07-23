@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HRA, MESTA, VERZE_DAT, lokace, polozka } from "./data/hra";
 import { SERVERY, nactiCeny, type Server } from "./data/aodp";
 import { SUROVINY_ID } from "./data/kategorie";
+import { nacti, uloz, zapomen } from "./stav/uloziste";
 import { SkladCen } from "./stav/skladCen";
 import {
   METRIKY, potrebnaIds, rozlozId, seradit, souhrn, spocitatSken,
@@ -41,20 +42,28 @@ type StavSkenu =
   | { druh: "hotovo"; ulozeno: number; zachovanoRucnich: number; kdy: Date }
   | { druh: "chyba"; zprava: string };
 
+/** Výchozí nastavení. Uložené hodnoty ho přepíšou, ne nahradí — kdyby
+ *  v uložených datech chybělo nové pole, aplikace se o něj neopře naprázdno. */
+const VYCHOZI_NASTAVENI: NastaveniSkenu = {
+  mesto: "Thetford",
+  focus: false,
+  denniBonus: 0,
+  premium: true,
+  sazbaStanice: 200,
+  pocetVyrobku: 100,
+  rezimNakupu: "instant",
+  rezimProdeje: "order",
+  skupina: SUROVINY_ID,
+  kategorie: [],
+};
+
 export function App() {
   const [server, setServer] = useState<Server>("west");
-  const [nastaveni, setNastaveni] = useState<NastaveniSkenu>({
-    mesto: "Thetford",
-    focus: false,
-    denniBonus: 0,
-    premium: true,
-    sazbaStanice: 200,
-    pocetVyrobku: 100,
-    rezimNakupu: "instant",
-    rezimProdeje: "order",
-    skupina: SUROVINY_ID,
-    kategorie: [],
-  });
+  // Uložené nastavení výchozí hodnoty PŘEPÍŠE, nenahradí — kdyby v uložených
+  // datech chybělo pole přidané v novější verzi, zůstane výchozí.
+  const [nastaveni, setNastaveni] = useState<NastaveniSkenu>(
+    () => ({ ...VYCHOZI_NASTAVENI, ...nacti("west").nastaveni }),
+  );
   const [metrika, setMetrika] = useState<Metrika>("marze");
   const [maxStari, setMaxStari] = useState<number>(48);
   const [jenZiskove, setJenZiskove] = useState(false);
@@ -69,7 +78,15 @@ export function App() {
 
   // Sklad cen přežívá překreslení. Ceny se sbírají napříč skeny —
   // ruční zadání ani starší stažení se nemají ztrácet.
-  const skladRef = useRef(new SkladCen());
+  //
+  // Obnovuje se z prohlížeče, aby ruční ceny přežily i obnovení stránky.
+  // Bez toho by slib z F3 („ruční cena je vědomý zásah") platil jen proti
+  // skenu, ne proti F5.
+  const skladRef = useRef<SkladCen>(null as unknown as SkladCen);
+  if (skladRef.current === null) {
+    skladRef.current = new SkladCen();
+    skladRef.current.obnov(nacti("west").ceny);
+  }
   const [verzeCen, setVerzeCen] = useState(0);
 
   // Ochrana proti vadě 1: každý sken má pořadové číslo. Když uživatel
@@ -162,6 +179,29 @@ export function App() {
     return v;
   }, [prilezitosti, jenZiskove, maxStari]);
 
+  // Uložit po každé změně cen nebo nastavení. Samotný zápis je odložený,
+  // aby se neukládalo při každém úhozu do políčka.
+  useEffect(() => {
+    uloz(server, nastaveni, skladRef.current.export());
+  }, [server, nastaveni, verzeCen]);
+
+  // Přepnutí serveru = jiná ekonomika. Ceny z `west` nesmí platit pro `europe`,
+  // proto se sklad vymění za ten uložený pro nový server.
+  const predchoziServer = useRef(server);
+  useEffect(() => {
+    if (predchoziServer.current === server) return;
+    predchoziServer.current = server;
+    prerusRef.current?.abort();
+
+    const novy = new SkladCen();
+    const ulozeno = nacti(server);
+    novy.obnov(ulozeno.ceny);
+    skladRef.current = novy;
+    if (ulozeno.nastaveni) setNastaveni((n) => ({ ...n, ...ulozeno.nastaveni }));
+    setVerzeCen((v) => v + 1);
+    setStav({ druh: "necinny" });
+  }, [server]);
+
   const s = souhrn(radky);
   const sP = souhrnPrilezitosti(prilezitosti);
 
@@ -210,6 +250,13 @@ export function App() {
           // Sken vší výbavy trvá ~46 s — bez možnosti zrušit by uživatel
           // musel čekat na něco, co si rozmyslel.
           zrusitSken={() => { prerusRef.current?.abort(); setStav({ druh: "necinny" }); }}
+          zapomenoutCeny={() => {
+            zapomen(server);
+            skladRef.current = new SkladCen();
+            setVerzeCen((v) => v + 1);
+            setStav({ druh: "necinny" });
+          }}
+          maUlozeneCeny={skladRef.current.pocet > 0}
           souhrn={s}
         />
         {rezim === "prilezitosti" ? (

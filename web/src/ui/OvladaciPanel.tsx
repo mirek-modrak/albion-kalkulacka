@@ -18,6 +18,8 @@ interface Props {
   stav: StavSkenu;
   spustitSken: () => void;
   zrusitSken: () => void;
+  zapomenoutCeny: () => void;
+  maUlozeneCeny: boolean;
   souhrn: {
     celkem: number; spocitano: number; ziskove: number;
     podezrele: number; chybiCena: number;
@@ -132,6 +134,14 @@ export function OvladaciPanel(p: Props) {
       )}
 
       <StavHlaska stav={p.stav} />
+
+      {p.maUlozeneCeny && (
+        <p className="mt-2 text-xs text-slate-500">
+          Ceny a nastavení se pamatují v tomhle prohlížeči.{" "}
+          {/* Maže jen ceny — nastavení má smysl si nechat. */}
+          <button onClick={p.zapomenoutCeny} className="underline">zahodit ceny</button>
+        </p>
+      )}
 
       <hr className="my-4 border-slate-200 dark:border-slate-800" />
 

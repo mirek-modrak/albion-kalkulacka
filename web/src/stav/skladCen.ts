@@ -14,6 +14,7 @@
 
 import type { Cena, TypCeny } from "@albion/jadro";
 import { jeSentinel, stariHodin, type RadekCeny } from "../data/aodp";
+import { naCenu, type UlozenaCena } from "./uloziste";
 
 function klic(mesto: string, zaklad: string, enchant: number, typ: TypCeny): string {
   return `${mesto}|${zaklad}#${enchant}|${typ}`;
@@ -106,6 +107,31 @@ export class SkladCen {
       }
     }
     return { ulozeno, zachovanoRucnich };
+  }
+
+  /**
+   * Vyexportuje obsah pro uložení do prohlížeče.
+   * Klíč se rozkládá zpět na složky — ukládat ho jako řetězec by znamenalo
+   * závislost na jeho vnitřním tvaru i na straně úložiště.
+   */
+  export(): UlozenaCena[] {
+    const vysledek: UlozenaCena[] = [];
+    for (const [k, cena] of this.mapa) {
+      const [, polozka] = k.split("|");
+      const [zaklad, enchant] = (polozka ?? "").split("#");
+      if (!zaklad) continue;
+      vysledek.push({
+        mesto: cena.mesto, zaklad, enchant: Number(enchant ?? 0),
+        typ: cena.typ, hodnota: cena.hodnota, zdroj: cena.zdroj, cas: cena.cas,
+      });
+    }
+    return vysledek;
+  }
+
+  /** Naplní sklad z uložených dat. Volá se jednou při startu. */
+  obnov(ceny: UlozenaCena[]): number {
+    for (const u of ceny) this.uloz(naCenu(u), u.zaklad, u.enchant);
+    return ceny.length;
   }
 
   /** Nejstarší cena z předaného seznamu, v hodinách. Null u ručních. */
