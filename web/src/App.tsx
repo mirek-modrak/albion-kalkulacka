@@ -305,7 +305,8 @@ export function App() {
               souhrn={souhrnPrevozu(prevozy)}
             />
             <TabulkaPrevozu radky={filtrovanePrevozy} metrika={metrikaPrevozu}
-                            vychoziMesto={nastaveniPrevozu.vychoziMesto} />
+                            vychoziMesto={nastaveniPrevozu.vychoziMesto}
+                            ztrataZasilek={nastaveniPrevozu.ztrataZasilek} />
           </div>
         ) : rezim === "prilezitosti" ? (
           <div className="space-y-3">

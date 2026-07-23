@@ -67,7 +67,7 @@ describe("co u převozu NEPLATÍ", () => {
   });
 
   it("výsledek neobsahuje return rate ani bonus", () => {
-    const v = spocitatPrevoz(zaklad, data.konstanty) as Record<string, unknown>;
+    const v = spocitatPrevoz(zaklad, data.konstanty) as unknown as Record<string, unknown>;
     expect(v["bonus"]).toBeUndefined();
     expect(v["poplatekStaniceCelkem"]).toBeUndefined();
   });

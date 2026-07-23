@@ -148,17 +148,40 @@ Nejčastější cíl: Caerleon (47×), Brecilien (22×), Lymhurst (12×)
 
 ### Klíčový test — riziko mění vítěze
 
-| Ztráta zásilek | Vítěz | Zisk/kg |
-|---|---|---|
-| 0 % | **Caerleon** | 35 599 |
-| 5 % | Caerleon | 26 372 |
-| **50 %** | **Brecilien** | 7 193 |
+| Ztráta zásilek | Vítěz | Ziskových tras | „už se nevyplatí" |
+|---|---|---|---|
+| 0 % | **Caerleon** | — | — |
+| 5 % | Caerleon | **106** | 33 |
+| 23 % | **Brecilien** | — | — |
+| 30 % | Brecilien | **17** | 114 |
+| 60 % | — | **2** | 128 |
 
-Při dostatečném riziku **Caerleon z prvního místa vypadne**. Přesně o to
-šlo: bez toho vstupu by kalkulačka stavěla nejrizikovější trasu nahoru,
+Mezi 7 % a 23 % **Caerleon z prvního místa vypadne**. Přesně o to šlo:
+bez toho vstupu by kalkulačka stavěla nejrizikovější trasu nahoru,
 protože počítá jen ceny.
 
 Tím je zároveň vyřešená [otevřená otázka o Caerleonu](todo.md).
+
+### Oprava po Mirkově výtce
+
+První verze měla riziko jako **rozbalovací seznam s nálepkami**
+(„0 % — bezpečná trasa", „30 % — riziková trasa").
+
+Mirek: *„nedával bych jim tam strojově procenta, protože to my nedokážeme
+odhadnout… zkušený hráč má jiné riziko vs nováček. Ať si s tím mohou
+pohrát sami."*
+
+Má pravdu — ta čísla i nálepky jsem si vymyslel. Předstírat, že umíme
+odhadnout riziko trasy, je horší než to přiznat.
+
+**Předěláno na:**
+- **volný posuvník 0–100 %** + číselné pole, žádné přednastavené stupně
+- **žádné hodnotící nálepky** — my nevíme, co je „bezpečné"
+- v textu je napsáno, že to odhadnout neumíme a proč
+- „z 100 zásilek dojede 55" — okamžitá zpětná vazba
+- **sloupec „Dopad rizika"** na každém řádku, aby bylo vidět, o kolik
+  to zisk srazilo; řádky, které se překlopí do ztráty, jsou označené
+  „už se nevyplatí"
 
 ### Kontrola matematiky
 

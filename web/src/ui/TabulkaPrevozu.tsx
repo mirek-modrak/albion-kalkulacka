@@ -7,6 +7,32 @@ interface Props {
   radky: RadekPrevozu[];
   metrika: MetrikaPrevozu;
   vychoziMesto: string;
+  /** Kolik rizika je právě nastaveno — sloupec dopadu se ukáže jen když je nenulové. */
+  ztrataZasilek: number;
+}
+
+/**
+ * O kolik riziko srazilo zisk.
+ *
+ * Bez tohohle sloupce by uživatel posouval jezdec a viděl jen, že se
+ * čísla mění — ne o kolik a proč. Takhle je dopad vidět na každém řádku.
+ */
+function DopadRizika({ r }: { r: RadekPrevozu }) {
+  const v = r.vysledek;
+  if (!v || v.ziskBezRizika === v.zisk) return <span className="text-slate-400">—</span>;
+
+  const rozdil = v.zisk - v.ziskBezRizika;
+  // Ze ziskové trasy se stala ztrátová — to je nejdůležitější případ.
+  const prevratilo = v.ziskBezRizika > 0 && v.zisk <= 0;
+
+  return (
+    <span className={prevratilo
+      ? "font-semibold text-red-600 dark:text-red-400"
+      : "text-slate-500"}>
+      {cislo(rozdil)}
+      {prevratilo && <span className="ml-1 text-xs">· už se nevyplatí</span>}
+    </span>
+  );
 }
 
 function Hodnota({ r, metrika }: { r: RadekPrevozu; metrika: MetrikaPrevozu }) {
@@ -20,7 +46,7 @@ function Hodnota({ r, metrika }: { r: RadekPrevozu; metrika: MetrikaPrevozu }) {
   );
 }
 
-export function TabulkaPrevozu({ radky, metrika, vychoziMesto }: Props) {
+export function TabulkaPrevozu({ radky, metrika, vychoziMesto, ztrataZasilek }: Props) {
   if (radky.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 p-8 text-center dark:border-slate-800">
@@ -43,6 +69,10 @@ export function TabulkaPrevozu({ radky, metrika, vychoziMesto }: Props) {
             <th className="px-2 py-2 text-right font-medium">Zisk / kg</th>
             <th className="px-2 py-2 text-right font-medium">Kusů na mount</th>
             <th className="px-2 py-2 text-right font-medium">Za cestu</th>
+            {ztrataZasilek > 0 && (
+              <th className="px-2 py-2 text-right font-medium"
+                  title="O kolik riziko srazilo zisk">Dopad rizika</th>
+            )}
             <th className="hidden px-2 py-2 text-right font-medium xl:table-cell">Marže</th>
             <th className="px-2 py-2 text-right font-medium">Stáří</th>
             <th className="px-2 py-2 text-left font-medium">Stav</th>
@@ -66,6 +96,9 @@ export function TabulkaPrevozu({ radky, metrika, vychoziMesto }: Props) {
                 <td className="px-2 py-1.5 text-right">
                   {r.ziskZaCestu !== null ? cislo(r.ziskZaCestu) : "—"}
                 </td>
+                {ztrataZasilek > 0 && (
+                  <td className="px-2 py-1.5 text-right"><DopadRizika r={r} /></td>
+                )}
                 <td className="hidden px-2 py-1.5 text-right text-slate-500 xl:table-cell">
                   {v ? procenta(v.marze) : "—"}
                 </td>

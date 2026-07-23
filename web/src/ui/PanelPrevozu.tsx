@@ -53,19 +53,6 @@ export function PanelPrevozu(p: Props) {
         </label>
 
         <label className="text-xs text-slate-500">
-          Očekávaná ztráta zásilek
-          <select className={`mt-0.5 block ${stylPole}`}
-                  value={p.nastaveni.ztrataZasilek}
-                  onChange={(e) => uprav("ztrataZasilek", Number(e.target.value))}>
-            <option value={0}>0 % — bezpečná trasa</option>
-            <option value={0.05}>5 %</option>
-            <option value={0.15}>15 %</option>
-            <option value={0.3}>30 % — riziková trasa</option>
-            <option value={0.5}>50 %</option>
-          </select>
-        </label>
-
-        <label className="text-xs text-slate-500">
           Seřadit podle
           <select className={`mt-0.5 block ${stylPole}`} value={p.metrika}
                   onChange={(e) => p.setMetrika(e.target.value as MetrikaPrevozu)}>
@@ -76,12 +63,41 @@ export function PanelPrevozu(p: Props) {
         </label>
       </div>
 
-      <p className="mt-2 text-xs text-slate-500">
-        {/* Riziko cesty NENÍ v herních datech — je to odhad podle trasy.
-            Bez něj by kalkulačka stavěla nejrizikovější trasy nahoru. */}
-        Ztráta zásilek se odečítá z tržby, ne z nákladů — co ztratíš, to jsi
-        zaplatil a neprodáš. Riziko není v herních datech, je to tvůj odhad.
-      </p>
+      {/* Riziko NEDÁVÁME v přednastavených stupních s nálepkami typu
+          „bezpečná / riziková trasa“ — to bychom předstírali, že ho umíme
+          odhadnout. Neumíme: zkušený hráč má na téže trase jiné riziko
+          než nováček. Volný posuvník, ať si s tím pohraje sám. */}
+      <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            Kolik zásilek podle tebe nedojede
+            <input type="range" min={0} max={100} step={1}
+                   value={Math.round(p.nastaveni.ztrataZasilek * 100)}
+                   onChange={(e) => uprav("ztrataZasilek", Number(e.target.value) / 100)}
+                   className="w-48" />
+          </label>
+          <input type="number" min={0} max={100} step={1}
+                 value={Math.round(p.nastaveni.ztrataZasilek * 100)}
+                 onChange={(e) => uprav("ztrataZasilek",
+                   Math.min(100, Math.max(0, Number(e.target.value))) / 100)}
+                 className={`w-16 ${stylPole}`} />
+          <span className="text-xs text-slate-500">%</span>
+
+          {p.nastaveni.ztrataZasilek > 0 && (
+            <span className="text-xs text-slate-500">
+              → z {cislo(100)} zásilek dojede{" "}
+              <b>{cislo(100 * (1 - p.nastaveni.ztrataZasilek))}</b>
+            </span>
+          )}
+        </div>
+
+        <p className="mt-1.5 text-xs text-slate-500">
+          Riziko trasy <b>není v herních datech</b> a my ho odhadnout neumíme —
+          zkušený hráč má na téže cestě jiné riziko než nováček. Posuň si to
+          a uvidíš, jak se pořadí mění. Ztráta se odečítá z tržby, ne z nákladů:
+          co nedojede, to jsi zaplatil a neprodáš.
+        </p>
+      </div>
 
       {p.souhrn.spocitano > 0 && (
         <div className="mt-2 border-t border-slate-100 pt-2 text-xs dark:border-slate-800">
