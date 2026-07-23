@@ -17,7 +17,7 @@ Otevře se na `http://localhost:5180`. Vyber město, klikni na
 co se právě teď nejvíc vyplatí refinovat.
 
 ```bash
-npm test        # 134 testů
+npm test        # 171 testů
 npm run build   # produkční build
 ```
 
@@ -54,7 +54,7 @@ vzorce existují jen jednou.
 | Příkaz | Co dělá |
 |---|---|
 | `npm run dev` | vývojový server na portu 5180 |
-| `npm test` | zlaté vektory (134 testů) |
+| `npm test` | zlaté vektory (171 testů) |
 | `npm run kontrola` | typová kontrola |
 | `npm run build` | produkční build |
 | `npm run generuj` | **znovu stáhne herní data** z ao-bin-dumps |
@@ -91,13 +91,13 @@ a ta se **musí** kontrolovat.
 
 | Dokument | O čem je |
 |---|---|
-| [funkcni-specifikace.md](docs/funkcni-specifikace.md) | co to má umět — scénáře S1–S8 |
-| [architektura-rozhodnuti.md](docs/architektura-rozhodnuti.md) | 11 rozhodnutí a jejich zdůvodnění |
+| [funkcni-specifikace.md](docs/funkcni-specifikace.md) | co to má umět — scénáře S1–S9 |
+| [architektura-rozhodnuti.md](docs/architektura-rozhodnuti.md) | 12 rozhodnutí a jejich zdůvodnění |
 | [architektura.md](docs/architektura.md) | vrstvy a datový model |
 | [vyzkum-01-mechaniky.md](docs/vyzkum-01-mechaniky.md) | herní mechaniky, daně, bonusy |
 | [vyzkum-02-herni-data.md](docs/vyzkum-02-herni-data.md) | receptury z herních dat |
 | [vyzkum-03-konstanty.md](docs/vyzkum-03-konstanty.md) | konstanty z `gamedata.xml` |
-| [f1-plan.md](docs/f1-plan.md) | plán a oponentura fáze F1 |
+| [f1-plan.md](docs/f1-plan.md) … [f5-plan.md](docs/f5-plan.md) | plány a oponentury jednotlivých fází |
 | [todo.md](docs/todo.md) | otevřené otázky |
 
 ---
