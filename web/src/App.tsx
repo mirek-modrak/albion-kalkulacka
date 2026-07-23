@@ -57,6 +57,16 @@ type StavSkenu =
 
 /** Výchozí nastavení. Uložené hodnoty ho přepíšou, ne nahradí — kdyby
  *  v uložených datech chybělo nové pole, aplikace se o něj neopře naprázdno. */
+/**
+ * Kolik řádků se nejvýš vykreslí.
+ *
+ * Naměřeno 2026-07-23: 3 240 řádků stojí 9 408 ms na každý přepočet,
+ * 231 řádků 3 864 ms. Vykreslení tedy bere víc než samotný výpočet
+ * a nikdo tak dlouhou tabulku stejně neprojde. Stejný strop jako
+ * u převozu, jen se u něj navíc ukazuje, kolik se zahodilo.
+ */
+const STROP_RADKU = 300;
+
 const VYCHOZI_NASTAVENI: NastaveniSkenu = {
   mesto: "Thetford",
   focus: false,
@@ -265,7 +275,13 @@ export function App() {
         return s === null || s <= maxStari;
       });
     }
-    return v;
+    // Stejný strop jako u převozu. Sken vší výbavy dá 3 240 řádků, které
+    // nikdo neprojde — a vykreslit je stálo naměřených 5,5 s z každého
+    // přepočtu. Řazení proběhlo dřív, takže se ořezává jen ocas.
+    //
+    // Kolik se zahodilo, MUSÍ být vidět; tiché ořezání by vypadalo,
+    // jako že víc příležitostí není.
+    return { radky: v.slice(0, STROP_RADKU), celkem: v.length };
   }, [prilezitosti, jenZiskove, maxStari]);
 
   // Převozní trasy. Počítá se jen v odpovídajícím režimu.
@@ -422,7 +438,9 @@ export function App() {
               </div>
             )}
             <TabulkaPrilezitosti
-              prilezitosti={filtrovanePrilezitosti} metrika={metrika}
+              prilezitosti={filtrovanePrilezitosti.radky}
+              celkemPredOrezem={filtrovanePrilezitosti.celkem}
+              metrika={metrika}
               davka={nastaveni.pocetVyrobku}
               otevritDetail={(p) => setDetailKlic(p.klic)}
             />

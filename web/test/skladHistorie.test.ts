@@ -86,6 +86,34 @@ describe("chybějící data NEJSOU nula", () => {
     expect(l.dniTydne).toBe(0);
   });
 
+  it("denní objem je MEDIÁN přes pozorované dny, ne součet dělený sedmi", () => {
+    // Past: kdyby se týdenní součet dělil sedmi, týden se třemi dny dat
+    // by ukázal necelou polovinu skutečnosti a trh by vypadal mělčí,
+    // než je. Tady jsou tři dny po 300 kusech.
+    const s = new SkladHistorie();
+    s.naplnZAodp([serie("Caerleon", [
+      { den: 20, cena: 100, objem: 300 },
+      { den: 21, cena: 100, objem: 300 },
+      { den: 22, cena: 100, objem: 300 },
+    ])], rozloz);
+
+    const c = s.ziskej("Caerleon", "T5_METALBAR", 0)!;
+    expect(c.objemDen).toBe(300);
+    expect(c.objemTyden).toBe(900);
+    expect(c.objemDen).not.toBe(900 / 7);
+  });
+
+  it("výstřelek v jednom dni denní objem nevytáhne — je to medián", () => {
+    const s = new SkladHistorie();
+    s.naplnZAodp([serie("Caerleon", [
+      { den: 20, cena: 100, objem: 10 },
+      { den: 21, cena: 100, objem: 20 },
+      { den: 22, cena: 100, objem: 9000 },
+    ])], rozloz);
+    // Průměr by byl 3 010 — jeden divný den by tvrdil, že je trh hluboký.
+    expect(s.ziskej("Caerleon", "T5_METALBAR", 0)!.objemDen).toBe(20);
+  });
+
   it("den s nulovým objemem se od chybějícího dne liší", () => {
     const s = new SkladHistorie();
     s.naplnZAodp([serie("Caerleon", [
@@ -177,7 +205,7 @@ describe("medián", () => {
 
 describe("stav likvidity — každý scénář MÁ spustit svůj guard", () => {
   const souhrn = (z: Partial<SouhrnObchodu> = {}): SouhrnObchodu => ({
-    medianTyden: 100, objemTyden: 1000, objemOkno: 4000,
+    medianTyden: 100, objemTyden: 1000, objemDen: 140, objemOkno: 4000,
     minOkno: 90, maxOkno: 110, dniTydne: 7, dniOkna: 30,
     posledniDen: "2026-07-22", ...z,
   });
@@ -191,32 +219,54 @@ describe("stav likvidity — každý scénář MÁ spustit svůj guard", () => {
   it("data v okně, ale ne za týden → zastarala (NE bez-dat)", () => {
     // Případ Lymhurstu. Trh existuje, jen ho týden nikdo neskenoval.
     const v = vyhodnotLikviditu(
-      souhrn({ dniTydne: 0, objemTyden: null, medianTyden: null, dniOkna: 23 }), 100, 5000,
+      souhrn({ dniTydne: 0, objemTyden: null, objemDen: null, medianTyden: null, dniOkna: 23 }),
+      100, 5000,
     );
     expect(v.stav).toBe("zastarala");
     expect(v.stav).not.toBe("bez-dat");
   });
 
-  it("objem menší než dávka → tenky", () => {
-    // Chceš 100 kusů, trh jich za týden vzal 13.
-    const v = vyhodnotLikviditu(souhrn({ objemTyden: 13 }), 100, 100);
+  it("DENNÍ objem menší než dávka → tenky", () => {
+    // Chceš 100 kusů, trh jich denně vezme 13. Poměřuje se s denním
+    // objemem, ne týdenním — dávku chceš prodat naráz.
+    const v = vyhodnotLikviditu(souhrn({ objemDen: 13, objemTyden: 91 }), 100, 100);
     expect(v.stav).toBe("tenky");
   });
 
+  it("týdenní objem přes dávku nestačí, když denní nestačí", () => {
+    // Past staré verze: 700 ks za týden vypadá dost na dávku 100,
+    // ale je to 100 denně a vysypat 100 naráz srazí cenu.
+    expect(vyhodnotLikviditu(souhrn({ objemDen: 50, objemTyden: 700 }), 100, 100).stav)
+      .toBe("tenky");
+  });
+
   it("objem přesně roven dávce → ok (hranice není varování)", () => {
-    expect(vyhodnotLikviditu(souhrn({ objemTyden: 100 }), 100, 100).stav).toBe("ok");
+    expect(vyhodnotLikviditu(souhrn({ objemDen: 100 }), 100, 100).stav).toBe("ok");
   });
 
   it("objem o kus menší než dávka → tenky (hranice se testuje z obou stran)", () => {
-    expect(vyhodnotLikviditu(souhrn({ objemTyden: 99 }), 100, 100).stav).toBe("tenky");
+    expect(vyhodnotLikviditu(souhrn({ objemDen: 99 }), 100, 100).stav).toBe("tenky");
   });
 
   it("nulová dávka nespustí tenky — není s čím porovnávat", () => {
-    expect(vyhodnotLikviditu(souhrn({ objemTyden: 1 }), 0, 100).stav).toBe("ok");
+    expect(vyhodnotLikviditu(souhrn({ objemDen: 1 }), 0, 100).stav).toBe("ok");
+  });
+
+  it("CHYBĚJÍCÍ objemDen se nesmí tvářit jako v pořádku", () => {
+    // Souhrn ze starší verze úložiště pole `objemDen` nemá. `undefined`
+    // projde kontrolou na null i porovnáním s dávkou (`undefined < 100`
+    // je false), takže mrtvý trh vyšel jako „ok" a nápověda tvrdila
+    // „trh je dost hluboký". Naměřeno při proklikávání 2026-07-23.
+    const stary = { ...souhrn() } as Record<string, unknown>;
+    delete stary.objemDen;
+
+    const v = vyhodnotLikviditu(stary as unknown as SouhrnObchodu, 100, 100);
+    expect(v.stav).not.toBe("ok");
+    expect(v.stav).toBe("zastarala");
   });
 
   it("týden s daty a nulovým objemem je tenky, ne zastarala", () => {
-    const v = vyhodnotLikviditu(souhrn({ objemTyden: 0, dniTydne: 3 }), 100, 100);
+    const v = vyhodnotLikviditu(souhrn({ objemDen: 0, dniTydne: 3 }), 100, 100);
     expect(v.stav).toBe("tenky");
   });
 });

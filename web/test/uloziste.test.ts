@@ -17,6 +17,8 @@ class FalesneUloziste {
   getItem(k: string) { return this.data.get(k) ?? null; }
   removeItem(k: string) { this.data.delete(k); }
   clear() { this.data.clear(); this.limitBajtu = null; }
+  get length() { return this.data.size; }
+  key(i: number) { return [...this.data.keys()][i] ?? null; }
 
   setItem(k: string, v: string) {
     if (this.limitBajtu !== null && v.length > this.limitBajtu) {
@@ -241,8 +243,8 @@ describe("historie — aplikace musí nastartovat vždy", () => {
     // Půlka starých souhrnů je horší než žádné — vypadala by stejně
     // důvěryhodně jako čerstvé.
     const davno = new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10);
-    falesne.setItem("albion:h1:west", JSON.stringify({
-      verze: 1, konecOkna: davno,
+    falesne.setItem("albion:h2:west", JSON.stringify({
+      verze: 2, konecOkna: davno,
       souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS", enchant: 0 }],
     }));
     expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
@@ -250,29 +252,29 @@ describe("historie — aplikace musí nastartovat vždy", () => {
 
   it("okno staré pár dní zůstane", () => {
     const nedavno = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
-    falesne.setItem("albion:h1:west", JSON.stringify({
-      verze: 1, konecOkna: nedavno,
+    falesne.setItem("albion:h2:west", JSON.stringify({
+      verze: 2, konecOkna: nedavno,
       souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS", enchant: 0 }],
     }));
     expect(nactiUlozenouHistorii("west").souhrny).toHaveLength(1);
   });
 
   it("poškozený obsah nezpůsobí výjimku", () => {
-    falesne.setItem("albion:h1:west", "{tohle není JSON");
+    falesne.setItem("albion:h2:west", "{tohle není JSON");
     expect(() => nactiUlozenouHistorii("west")).not.toThrow();
     expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
   });
 
   it("jiná verze formátu se zahodí", () => {
-    falesne.setItem("albion:h1:west", JSON.stringify({
+    falesne.setItem("albion:h2:west", JSON.stringify({
       verze: 99, konecOkna: null, souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS" }],
     }));
     expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
   });
 
   it("nesmyslné položky v seznamu se přeskočí", () => {
-    falesne.setItem("albion:h1:west", JSON.stringify({
-      verze: 1, konecOkna: null,
+    falesne.setItem("albion:h2:west", JSON.stringify({
+      verze: 2, konecOkna: null,
       souhrny: [null, { mesto: "Caerleon" }, { mesto: "Caerleon", zaklad: "T5_PLANKS" }],
     }));
     expect(nactiUlozenouHistorii("west").souhrny).toHaveLength(1);
@@ -289,5 +291,24 @@ describe("převod na typ jádra", () => {
     // Čas se NIKDY nepřerazítkovává — stáří dat musí být skutečné stáří dat.
     expect(c.cas).toBe("2026-07-22T10:00:00");
     expect(c.zdroj).toBe("rucne");
+  });
+});
+
+describe("úklid starých verzí historie", () => {
+  it("osiřelý záznam ze starší verze se smaže", () => {
+    // Zvýšení verze ho jen přestane číst. Historie zabírá stovky kB,
+    // takže po pár verzích by osiřelé záznamy vytlačily ty živé
+    // a historie by se tiše přestala ukládat.
+    falesne.setItem("albion:h1:west", JSON.stringify({ verze: 1, konecOkna: null, souhrny: [] }));
+    nactiUlozenouHistorii("west");
+    expect(falesne.getItem("albion:h1:west")).toBeNull();
+  });
+
+  it("úklid se netýká jiného serveru ani cen", () => {
+    falesne.setItem("albion:h1:europe", "x");
+    falesne.setItem("albion:v1:west", "y");
+    nactiUlozenouHistorii("west");
+    expect(falesne.getItem("albion:h1:europe")).toBe("x");
+    expect(falesne.getItem("albion:v1:west")).toBe("y");
   });
 });

@@ -63,24 +63,24 @@ export function OdznakLikvidity({ likvidita, davka }: {
     );
   }
 
-  const objem = souhrn.objemTyden ?? 0;
+  const objem = souhrn.objemDen ?? 0;
 
   if (stav === "tenky") {
     return (
       <span className="text-xs text-amber-600 dark:text-amber-400"
-            title={`Za týden se prodalo ${cislo(objem)} kusů, ale chceš vyrobit `
-                 + `${cislo(davka)}. Tolik jich trh nemusí vzít — a při prodeji `
-                 + "pod cenu marže zmizí."}>
-        {kusy(objem)} ks/týd
+            title={`Denně se prodá ${cislo(objem)} kusů, ale chceš vyrobit `
+                 + `${cislo(davka)}. Tolik jich trh naráz nemusí vzít — a při `
+                 + `prodeji pod cenu marže zmizí. Za celý týden ${cislo(souhrn.objemTyden ?? 0)} ks.`}>
+        {kusy(objem)} ks/den
       </span>
     );
   }
 
   return (
     <span className="text-xs text-slate-500"
-          title={`Za týden se prodalo ${cislo(objem)} kusů — na dávku ${cislo(davka)} `
-               + "je trh dost hluboký."}>
-      {kusy(objem)} ks/týd
+          title={`Denně se prodá ${cislo(objem)} kusů — na dávku ${cislo(davka)} `
+               + `je trh dost hluboký. Za celý týden ${cislo(souhrn.objemTyden ?? 0)} ks.`}>
+      {kusy(objem)} ks/den
     </span>
   );
 }

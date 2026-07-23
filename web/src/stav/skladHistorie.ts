@@ -50,6 +50,19 @@ export interface SouhrnObchodu {
   medianTyden: number | null;
   /** Kusů zobchodovaných za poslední týden. Null = žádná data (NE nula!). */
   objemTyden: number | null;
+  /**
+   * Kolik kusů se prodá za DEN — medián přes dny týdne, které mají data.
+   *
+   * Medián, ne součet dělený sedmi: když má týden data jen za tři dny,
+   * dělení sedmi by objem srazilo na necelou polovinu skutečnosti.
+   * Medián přes pozorované dny odpovídá na „kolik se tu běžně prodá",
+   * což je otázka, která se poměřuje s velikostí dávky.
+   *
+   * Denní číslo je čitelnější než týdenní — u Black Marketu jsou to
+   * u tašek a plášťů tisíce kusů DENNĚ a v týdenním údaji to nebylo
+   * poznat na první pohled.
+   */
+  objemDen: number | null;
   /** Kusů za celé 30denní okno. Null = žádná data. */
   objemOkno: number | null;
   /** Nejnižší a nejvyšší denní průměr v okně. Null = žádná data. */
@@ -63,7 +76,7 @@ export interface SouhrnObchodu {
 }
 
 const PRAZDNY: SouhrnObchodu = {
-  medianTyden: null, objemTyden: null, objemOkno: null,
+  medianTyden: null, objemTyden: null, objemDen: null, objemOkno: null,
   minOkno: null, maxOkno: null, dniTydne: 0, dniOkna: 0, posledniDen: null,
 };
 
@@ -157,6 +170,7 @@ export class SkladHistorie {
       const { zaklad, enchant } = rozlozId(s.item_id);
 
       const cenyTydne: number[] = [];
+      const objemyTydne: number[] = [];
       let objemTydne = 0;
       let objemOkna = 0;
       let min: number | null = null;
@@ -178,6 +192,7 @@ export class SkladHistorie {
         if (den >= zacatekTydne) {
           dniTydne++;
           objemTydne += b.item_count;
+          objemyTydne.push(b.item_count);
           cenyTydne.push(b.avg_price);
         }
       }
@@ -188,6 +203,7 @@ export class SkladHistorie {
         medianTyden: median(cenyTydne),
         // Nula jen když ten týden data BYLA a byla nulová. Bez dat → null.
         objemTyden: dniTydne > 0 ? objemTydne : null,
+        objemDen: median(objemyTydne),
         objemOkno: objemOkna,
         minOkno: min, maxOkno: max,
         dniTydne, dniOkna, posledniDen,
@@ -294,10 +310,19 @@ export function vyhodnotLikviditu(
       ? (nabidka - s.medianTyden) / s.medianTyden
       : null;
 
+  // Číslo, ne „není null". Souhrny se obnovují z prohlížeče, což je cizí
+  // vstup — a `undefined` z uloženého záznamu starší verze projde jak
+  // kontrolou na null, tak porovnáním s dávkou (`undefined < 100` je false).
+  // Mrtvý trh by se pak tvářil jako v pořádku.
+  const denniObjem = typeof s.objemDen === "number" ? s.objemDen : null;
+
   let stav: StavLikvidity;
   if (s.dniOkna === 0) stav = "bez-dat";
-  else if (s.dniTydne === 0 || s.objemTyden === null) stav = "zastarala";
-  else if (davka > 0 && s.objemTyden < davka) stav = "tenky";
+  else if (s.dniTydne === 0 || denniObjem === null) stav = "zastarala";
+  // Proti DENNÍMU objemu, ne týdennímu. Dávku zpravidla chceš prodat naráz,
+  // ne ji rozpouštět přes týden — a vysypat 1 000 kusů na trh, který jich
+  // denně vezme 340, znamená srazit cenu.
+  else if (davka > 0 && denniObjem < davka) stav = "tenky";
   else stav = "ok";
 
   return { stav, souhrn: s, fantomovyListing, odchylkaOdMedianu };

@@ -6,6 +6,8 @@ import { OdznakLikvidity, ZnackaFantomu } from "./OdznakLikvidity";
 
 interface Props {
   prilezitosti: Prilezitost[];
+  /** Kolik řádků prošlo filtrem, než se seznam ořízl na strop. */
+  celkemPredOrezem: number;
   metrika: Metrika;
   /** Dávka uživatele — proti ní se poměřuje, jestli je trh dost hluboký. */
   davka: number;
@@ -57,7 +59,9 @@ function Pokryti({ p }: { p: Prilezitost }) {
   );
 }
 
-export function TabulkaPrilezitosti({ prilezitosti, metrika, davka, otevritDetail }: Props) {
+export function TabulkaPrilezitosti({
+  prilezitosti, celkemPredOrezem, metrika, davka, otevritDetail,
+}: Props) {
   if (prilezitosti.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 p-8 text-center dark:border-slate-800">
@@ -156,6 +160,17 @@ export function TabulkaPrilezitosti({ prilezitosti, metrika, davka, otevritDetai
           })}
         </tbody>
       </table>
+
+      {/* Ořezání se NESMÍ zamlčet — jinak to vypadá, že víc příležitostí
+          není. Řádky jsou seřazené, takže se zahazuje ocas, ne náhodný výběr. */}
+      {celkemPredOrezem > prilezitosti.length && (
+        <p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500
+                      dark:border-slate-800/60">
+          Zobrazeno {cislo(prilezitosti.length)} nejlepších z{" "}
+          {cislo(celkemPredOrezem)}. Zbytek je podle zvolené metriky horší —
+          zúž výběr kategorií nebo zapni „jen ziskové".
+        </p>
+      )}
     </div>
   );
 }

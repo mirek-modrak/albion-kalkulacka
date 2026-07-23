@@ -169,7 +169,16 @@ export function naCenu(u: UlozenaCena): Cena {
  * skenu. Ruční ceny jsou práce uživatele. Ta hierarchie musí být vidět
  * i v tom, co se obětuje první.
  */
-const VERZE_HISTORIE = 1;
+/**
+ * ZVÝŠIT při každé změně tvaru `SouhrnObchodu`.
+ *
+ * v2: přibylo `objemDen`. Bez zvýšení verze zůstalo u uložených souhrnů
+ * `undefined` — a to prošlo kontrolou na `null` i porovnáním s dávkou
+ * (`undefined < 100` je false), takže se mrtvý trh tvářil jako v pořádku.
+ * Naměřeno při proklikávání: „0 ks/den" šedě, s nápovědou „trh je dost
+ * hluboký". Chybějící pole se musí zahodit, ne dopočítat.
+ */
+const VERZE_HISTORIE = 2;
 
 /** Když se celé 30denní okno přetočí, uložené souhrny už nevypovídají o ničem. */
 const MAX_STARI_HISTORIE_DNI = 30;
@@ -184,11 +193,34 @@ function klicHistorie(server: Server): string {
   return `albion:h${VERZE_HISTORIE}:${server}`;
 }
 
+/**
+ * Uklidí souhrny ze starších verzí formátu.
+ *
+ * Zvýšení verze osiřelý záznam nesmaže — jen ho přestane číst. Historie
+ * zabírá stovky kilobajtů a úložiště má kolem 5 MB, takže po pár verzích
+ * by osiřelé záznamy vytlačily ty živé. Projevilo by se to tím, že se
+ * historie tiše přestane ukládat.
+ */
+function ukliďStareVerze(server: Server): void {
+  try {
+    const platny = klicHistorie(server);
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && /^albion:h\d+:/.test(k) && k.endsWith(`:${server}`) && k !== platny) {
+        localStorage.removeItem(k);
+      }
+    }
+  } catch {
+    // Úklid je pohodlí, ne nutnost.
+  }
+}
+
 export function nactiUlozenouHistorii(server: Server): {
   souhrny: UlozenySouhrn[];
   konecOkna: string | null;
 } {
   if (!DOSTUPNE) return { souhrny: [], konecOkna: null };
+  ukliďStareVerze(server);
 
   try {
     const surove = localStorage.getItem(klicHistorie(server));

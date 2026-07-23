@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TypCeny } from "@albion/jadro";
 import type { Server } from "../data/aodp";
 import type { Lokace } from "@albion/jadro";
@@ -406,11 +406,16 @@ function SekceObchodu({ radek, davka }: { radek: RadekSkenu; davka: number }) {
              hodnota={s.minOkno !== null
                ? <>{cislo(s.minOkno)} – {cislo(s.maxOkno ?? 0)}</>
                : <span className="text-slate-400">—</span>} />
+      {/* Denní objem je to, co se poměřuje s dávkou — proto je první a tučně. */}
+      <Radek popis="Prodá se za den"
+             hodnota={s.objemDen !== null
+               ? <b className={l.stav === "tenky" ? "text-amber-600 dark:text-amber-400" : ""}>
+                   {cislo(s.objemDen)} ks
+                 </b>
+               : <span className="text-slate-400">bez dat</span>} />
       <Radek popis="Prodáno za týden"
              hodnota={s.objemTyden !== null
-               ? <b className={l.stav === "tenky" ? "text-amber-600 dark:text-amber-400" : ""}>
-                   {cislo(s.objemTyden)} ks
-                 </b>
+               ? `${cislo(s.objemTyden)} ks`
                : <span className="text-slate-400">bez dat</span>} />
       <Radek popis="Prodáno za 30 dní" hodnota={`${cislo(s.objemOkno ?? 0)} ks`} />
       {/* Pokrytí je to, co odlišuje „mrtvý trh" od „nikdo neskenoval".
@@ -427,9 +432,9 @@ function SekceObchodu({ radek, davka }: { radek: RadekSkenu; davka: number }) {
       {l.stav === "tenky" && (
         <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800
                       dark:bg-amber-950/40 dark:text-amber-300">
-          Chceš vyrobit {cislo(davka)} ks, ale za týden se jich prodalo{" "}
-          {cislo(s.objemTyden ?? 0)}. Tolik kusů trh nemusí vzít — a prodej pod cenu
-          marži umaže.
+          Chceš vyrobit {cislo(davka)} ks, ale denně se jich prodá{" "}
+          {cislo(s.objemDen ?? 0)}. Tolik kusů trh naráz nemusí vzít — a prodej
+          pod cenu marži umaže. Rozložit prodej na víc dní pomůže.
         </p>
       )}
       {l.stav === "zastarala" && (
@@ -484,6 +489,16 @@ function Dlazdice({ popis, hodnota, kladne }:
   );
 }
 
+/**
+ * Odklad zápisu ceny do skladu.
+ *
+ * Bez něj spustí KAŽDÝ úhoz přepočet celé tabulky příležitostí.
+ * Naměřeno 2026-07-23 při načteném skenu všech zbraní: jedna změna ceny
+ * = 9 408 ms. Napsat pětimístnou cenu tedy znamenalo skoro minutu,
+ * kdy aplikace nereagovala — a vypadalo to, že spadla.
+ */
+const ODKLAD_CENY_MS = 400;
+
 /** Jedno cenové políčko včetně původu hodnoty. */
 function RadekCeny(props: {
   popis: string;
@@ -498,6 +513,37 @@ function RadekCeny(props: {
   const cena = sklad.ziskej(mesto, zaklad, enchant, typ);
   const rucni = sklad.jeRucne(mesto, zaklad, enchant, typ);
 
+  // Rozepsaná hodnota žije v políčku, ne ve skladu. Null = needituje se
+  // a bere se ta uložená. Díky tomu je psaní okamžité a přepočet proběhne
+  // až jednou, po dopsání.
+  const [rozepsane, setRozepsane] = useState<string | null>(null);
+  const casovacRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Poslední nedoručená hodnota — kdyby se okno zavřelo dřív, než odklad doběhne.
+  const cekajiciRef = useRef<string | null>(null);
+
+  function ulozit(text: string) {
+    if (text === "") sklad.zrusRucne(mesto, zaklad, enchant, typ);
+    else sklad.ulozRucne(mesto, zaklad, enchant, typ, Number(text));
+    cekajiciRef.current = null;
+    props.poZmene();
+  }
+
+  /** Doručit hned — při opuštění políčka nemá smysl na odklad čekat. */
+  function dorucitHned() {
+    clearTimeout(casovacRef.current);
+    if (cekajiciRef.current !== null) ulozit(cekajiciRef.current);
+    setRozepsane(null);
+  }
+
+  // Zavření okna nesmí sníst rozepsanou cenu. Ruční cena je vědomá práce
+  // uživatele a ztratit ji kvůli tomu, že odklad nedoběhl, by bylo horší
+  // než ten odklad vůbec nemít.
+  useEffect(() => () => {
+    clearTimeout(casovacRef.current);
+    if (cekajiciRef.current !== null) ulozit(cekajiciRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="mb-2">
       <div className="mb-0.5 flex items-baseline justify-between gap-2">
@@ -509,20 +555,33 @@ function RadekCeny(props: {
       <div className="flex items-center gap-2">
         <input
           type="number" min={0} step={1}
-          value={cena?.hodnota ?? ""}
+          value={rozepsane ?? (cena?.hodnota ?? "")}
           placeholder="zadej cenu"
           onChange={(e) => {
-            const h = Number(e.target.value);
-            if (e.target.value === "") sklad.zrusRucne(mesto, zaklad, enchant, typ);
-            else sklad.ulozRucne(mesto, zaklad, enchant, typ, h);
-            props.poZmene();
+            const text = e.target.value;
+            setRozepsane(text);              // v políčku hned
+            cekajiciRef.current = text;
+            clearTimeout(casovacRef.current);
+            casovacRef.current = setTimeout(() => {
+              ulozit(text);                  // do skladu až po dopsání
+              setRozepsane(null);
+            }, ODKLAD_CENY_MS);
           }}
+          onBlur={dorucitHned}
+          // Enter je jasný signál „dopsal jsem" — čekat na odklad je zbytečné.
+          onKeyDown={(e) => { if (e.key === "Enter") dorucitHned(); }}
           className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm
                      dark:border-slate-700 dark:bg-slate-950"
         />
         {rucni ? (
           <button
-            onClick={() => { sklad.zrusRucne(mesto, zaklad, enchant, typ); props.poZmene(); }}
+            onClick={() => {
+              clearTimeout(casovacRef.current);
+              cekajiciRef.current = null;
+              setRozepsane(null);
+              sklad.zrusRucne(mesto, zaklad, enchant, typ);
+              props.poZmene();
+            }}
             title="Zahodit ruční hodnotu a vzít cenu z AODP při dalším skenu"
             className="whitespace-nowrap rounded border border-amber-500 px-2 py-1 text-xs
                        text-amber-600 dark:text-amber-400"
