@@ -12,3 +12,4 @@ export * from "./bonusy.js";
 export * from "./recept.js";
 export * from "./vypocet.js";
 export * from "./prevoz.js";
+export * from "./retezec.js";

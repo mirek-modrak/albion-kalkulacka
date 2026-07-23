@@ -182,7 +182,7 @@ describe("nevratné suroviny", () => {
       zaklad: "TEST_POLOZKA", nazev: null, druh: "vybava", tier: 5, vaha: 1, itemValue: 32,
       kategorie: null, maxEnchant: 0, vylepseni: [],
       varianty: [{
-        enchant: 0, pocetVyrobenych: 1, focus: 0, cas: 0, sFactionTokenem: false,
+        enchant: 0, pocetVyrobenych: 1, focus: 0, cas: 0, silver: 0, sFactionTokenem: false,
         vstupy: [
           { zaklad: "VRATNA", enchant: 0, pocet: 10, vratna: true },
           { zaklad: "NEVRATNA", enchant: 0, pocet: 10, vratna: false },
@@ -216,7 +216,7 @@ describe("nevratné suroviny", () => {
       zaklad: "TEST_DAVKA", nazev: null, druh: "vybava", tier: 5, vaha: 1, itemValue: 0,
       kategorie: null, maxEnchant: 0, vylepseni: [],
       varianty: [{
-        enchant: 0, pocetVyrobenych: 5, focus: 100, cas: 0, sFactionTokenem: false,
+        enchant: 0, pocetVyrobenych: 5, focus: 100, cas: 0, silver: 0, sFactionTokenem: false,
         vstupy: [{ zaklad: "X", enchant: 0, pocet: 10, vratna: false }],
       }],
     };

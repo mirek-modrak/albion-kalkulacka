@@ -344,9 +344,11 @@ export function App() {
             mesto: v.mesto, radek: v.radek,
           }))}
           server={server}
+          lokace={lokace(detailPrilezitost?.nejlepsi.mesto ?? nastaveni.mesto)}
           nastaveni={nastaveni}
           sklad={skladRef.current}
           nazevPolozky={nazevPolozky}
+          verzeCen={verzeCen}
           poZmeneCeny={() => setVerzeCen((v) => v + 1)}
           zavrit={() => setDetailKlic(null)}
         />
@@ -356,9 +358,11 @@ export function App() {
         <DetailPolozky
           radek={detail}
           server={server}
+          lokace={lokace(nastaveni.mesto)}
           nastaveni={nastaveni}
           sklad={skladRef.current}
           nazevPolozky={nazevPolozky}
+          verzeCen={verzeCen}
           // Přepočítá se CELÝ sken, ne jen detail — jedna cena ovlivní víc řádků
           // (T4 ingot je vstupem pro T5 a zároveň výstupem T4).
           poZmeneCeny={() => setVerzeCen((v) => v + 1)}

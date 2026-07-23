@@ -61,6 +61,14 @@ export interface Varianta {
   pocetVyrobenych: number;
   focus: number;
   cas: number;
+  /**
+   * Pevný poplatek v silveru za dávku.
+   *
+   * U refiningu a craftingu je 0. Nenulový je u TRANSMUTACE — přeměny
+   * suroviny na vyšší tier (T4 ruda → T5 ruda stojí 781 silver).
+   * Bez něj by transmutace vypadala zadarmo.
+   */
+  silver: number;
   /** Používá faction token? Ve výchozím výběru se přeskakuje. */
   sFactionTokenem: boolean;
 }

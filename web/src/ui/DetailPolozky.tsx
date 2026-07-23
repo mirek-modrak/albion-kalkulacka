@@ -1,11 +1,13 @@
 import { useEffect } from "react";
 import type { TypCeny } from "@albion/jadro";
 import type { Server } from "../data/aodp";
+import type { Lokace } from "@albion/jadro";
 import type { RadekSkenu, NastaveniSkenu } from "../stav/sken";
 import { typProNakup, typProProdej } from "../stav/sken";
 import type { SkladCen } from "../stav/skladCen";
 import { barvaHodnoty, barvaStari, cislo, procenta, seZnamenkem, stari } from "./format";
 import { SekceHistorie } from "./SekceHistorie";
+import { SekceRetezec } from "./SekceRetezec";
 
 interface Props {
   radek: RadekSkenu;
@@ -19,6 +21,10 @@ interface Props {
   srovnaniMest?: { mesto: string; radek: RadekSkenu }[];
   /** Server — historie se tahá pro něj. */
   server: Server;
+  /** Lokace zobrazovaného města — pro bonusy v řetězu. */
+  lokace: Lokace | undefined;
+  /** Čítač změn cen — sklad je proměnlivý objekt, jinak se řetěz nepřepočítá. */
+  verzeCen: number;
   /** Které město se právě zobrazuje v rozpadu. */
   zobrazeneMesto?: string;
 }
@@ -130,6 +136,18 @@ export function DetailPolozky(p: Props) {
             typ={typProdej} sklad={sklad} poZmene={p.poZmeneCeny}
           />
         </Sekce>
+
+        {/* Koupit vs. vyrobit — jen u položek, které jdou vyrobit. */}
+        {radek.polozka.varianty.length > 0 && (
+          <Sekce nadpis="Koupit, nebo vyrobit?">
+            <SekceRetezec
+              polozka={radek.polozka} enchant={radek.enchant}
+              mesto={mesto} lokace={p.lokace} sklad={sklad}
+              nastaveni={nastaveni} nazevPolozky={p.nazevPolozky}
+              verzeCen={p.verzeCen}
+            />
+          </Sekce>
+        )}
 
         {/* Historie je MIMO větev „má výsledek".
             Když chybí aktuální cena, je to jediné, co o položce víme —

@@ -98,6 +98,9 @@ function prectiVarianty(pozadavky, enchant) {
       pocetVyrobenych: cislo(p["@amountcrafted"], 1),
       focus: cislo(p["@craftingfocus"], 0),
       cas: cislo(p["@time"], 0),
+      // Nenulový u transmutace (T4 ruda → T5 ruda = 781 silver).
+      // Bez něj by transmutace vypadala zadarmo.
+      silver: cislo(p["@silver"], 0),
       sFactionTokenem: vstupy.some((v) => v.zaklad.includes("FACTION")),
     };
   });
@@ -348,6 +351,15 @@ function overit(data) {
     }
     if (t5bar.itemValue !== 32) chyby.push(`T5_METALBAR itemValue má být 32, je ${t5bar.itemValue}`);
     if (t5bar.maxEnchant !== 4) chyby.push(`T5_METALBAR maxEnchant má být 4, je ${t5bar.maxEnchant}`);
+  }
+
+  // Transmutace (surovina na vyšší tier) stojí silver — bez něj by
+  // vypadala zadarmo a řetězový výpočet by ji chybně doporučoval.
+  const ruda = najdi("T5_ORE");
+  if (ruda) {
+    const v = ruda.varianty.find((x) => x.enchant === 0);
+    if (!v) chyby.push("T5_ORE nemá variantu pro enchant 0");
+    else if (v.silver <= 0) chyby.push(`transmutace T5_ORE má stát silver, má ${v.silver}`);
   }
 
   const kamen = najdi("T5_STONEBLOCK");

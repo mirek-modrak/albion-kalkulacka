@@ -51,6 +51,8 @@ export interface VysledekVypoctu {
   setupFeeNakup: number;
   poplatekStaniceKus: number;
   poplatekStaniceCelkem: number;
+  /** Pevný poplatek za dávku — nenulový jen u transmutace. */
+  silverCelkem: number;
   nakladyCelkem: number;
 
   trzbaHruba: number;
@@ -137,7 +139,11 @@ export function spocitat(
   );
   const poplatekStaniceCelkem = poplatekStaniceKus * z.pocetVyrobku;
 
-  const nakladyCelkem = nakladSuroviny + setupFeeNakup + poplatekStaniceCelkem;
+  // Pevný poplatek za dávku — nenulový u transmutace (surovina na vyšší
+  // tier). U refiningu a craftingu je nula.
+  const silverCelkem = (varianta.silver / varianta.pocetVyrobenych) * z.pocetVyrobku;
+
+  const nakladyCelkem = nakladSuroviny + setupFeeNakup + poplatekStaniceCelkem + silverCelkem;
 
   // ── Výnos ─────────────────────────────────────────────────
   const trzbaHruba = z.cenaVystupu.hodnota * z.pocetVyrobku;
@@ -162,7 +168,7 @@ export function spocitat(
     ok: true,
     hodnota: {
       bonus, vstupy,
-      nakladSuroviny, setupFeeNakup, poplatekStaniceKus, poplatekStaniceCelkem, nakladyCelkem,
+      nakladSuroviny, setupFeeNakup, poplatekStaniceKus, poplatekStaniceCelkem, silverCelkem, nakladyCelkem,
       trzbaHruba, dan, sazbaDane, setupFeeProdej, trzbaCista,
       zisk,
       marze: nakladyCelkem > 0 ? zisk / nakladyCelkem : 0,
