@@ -20,7 +20,7 @@ const NASTAVENI: NastaveniSkenu = {
   mesto: "Thetford", focus: false, denniBonus: 0, premium: true,
   sazbaStanice: 200, pocetVyrobku: 100,
   rezimNakupu: "instant", rezimProdeje: "order",
-  skupina: SUROVINY_ID, kategorie: [], prodejNaBlackMarketu: false,
+  skupina: SUROVINY_ID, kategorie: [], mistoProdeje: "mesto",
 };
 
 const nazev = (z: string, e: number) => `${z}${e > 0 ? `.${e}` : ""}`;
@@ -199,5 +199,26 @@ describe("Black Market jako osmé MÍSTO, ne osmé město", () => {
     // i výběr města v panelu.
     expect(MESTA.some((m) => m.nazev === "Black Market")).toBe(false);
     expect(mistaProSrovnani("zbrane").some((m) => m.mesto === "Black Market")).toBe(false);
+  });
+});
+
+describe("Black Market s převozem", () => {
+  it("prodává se z KAŽDÉHO města, ne jen z Caerleonu", () => {
+    const m = mistaProSrovnani("zbrane", "bm-s-prevozem");
+    expect(m).toHaveLength(7);
+    expect(m.every((x) => x.naBlackMarketu)).toBe(true);
+    // Města zůstávají místy VÝROBY — bonusy patří jim.
+    expect(m.map((x) => x.mesto).sort()).toEqual(MESTA.map((x) => x.nazev).sort());
+  });
+
+  it("u surovin se převoz na BM nenabízí", () => {
+    // BM suroviny neobchoduje, jinak by celý sken skončil na „chybí cena".
+    const m = mistaProSrovnani(SUROVINY_ID, "bm-s-prevozem");
+    expect(m.every((x) => !x.naBlackMarketu)).toBe(true);
+  });
+
+  it("bez převozu zůstává jen Caerleon -> BM", () => {
+    const m = mistaProSrovnani("zbrane", "bm");
+    expect(m.filter((x) => x.naBlackMarketu).map((x) => x.mesto)).toEqual(["Caerleon"]);
   });
 });

@@ -31,6 +31,17 @@ export interface ZadaniVypoctu {
   povolitFactionToken?: boolean;
   /** Black Market má nižší setup fee (1,5 % místo 2,5 %). */
   prodejNaBlackMarketu?: boolean;
+  /**
+   * Podíl zásilek ztracených cestou na místo prodeje, 0–1.
+   *
+   * Nenulové jen tehdy, když se výrobek někam veze — typicky výroba
+   * v královském městě a prodej na Black Marketu, který leží v černé
+   * zóně. Odhad uživatele, v datech to není.
+   *
+   * Ztráta se odečítá z TRŽBY, ne z nákladů: co se ztratí, to se
+   * neprodá, ale vyrobit se to muselo. Stejný model jako `spocitatPrevoz`.
+   */
+  ztrataZasilek?: number;
 }
 
 export interface RadekVstupu {
@@ -62,6 +73,13 @@ export interface VysledekVypoctu {
   trzbaCista: number;
 
   zisk: number;
+  /**
+   * Kolik by to vyneslo, kdyby cestou nic nezmizelo.
+   *
+   * Bez tohohle čísla nejde poznat, jestli je rozdíl mezi městy dílem
+   * výroby, nebo jen zvoleného rizika. Při nulové ztrátě se rovná `zisk`.
+   */
+  ziskBezRizika: number;
   /**
    * Zisk děleno náklady = návratnost vloženého kapitálu.
    * Výchozí metrika řazení ve skenu: říká, kolik vydělám na každý
@@ -146,11 +164,19 @@ export function spocitat(
   const nakladyCelkem = nakladSuroviny + setupFeeNakup + poplatekStaniceCelkem + silverCelkem;
 
   // ── Výnos ─────────────────────────────────────────────────
-  const trzbaHruba = z.cenaVystupu.hodnota * z.pocetVyrobku;
+  // Ztracená zásilka se neprodá, ale vyrobit se musela — proto se ztráta
+  // odečítá z TRŽBY, ne z nákladů. Stejný model jako `spocitatPrevoz`.
+  const ztrata = Math.min(Math.max(z.ztrataZasilek ?? 0, 0), 1);
+  const dorazi = z.pocetVyrobku * (1 - ztrata);
+
+  const trzbaHruba = z.cenaVystupu.hodnota * dorazi;
 
   const sazbaDane = z.premium ? konstanty.danPremium : konstanty.danNormalni;
   // Daň nikdy neklesne pod minimum za kus — u levných položek to není zanedbatelné.
-  const dan = Math.max(trzbaHruba * sazbaDane, konstanty.minimalniDan * z.pocetVyrobku);
+  // Počítá se z toho, co DORAZÍ: co se ztratí, to se neprodá a nezdaní.
+  const dan = dorazi > 0
+    ? Math.max(trzbaHruba * sazbaDane, konstanty.minimalniDan * dorazi)
+    : 0;
 
   const sazbaSetupProdej = z.prodejNaBlackMarketu
     ? konstanty.blackMarketSetupFee
@@ -158,6 +184,15 @@ export function spocitat(
   const setupFeeProdej = z.rezimProdeje === "order" ? trzbaHruba * sazbaSetupProdej : 0;
 
   const trzbaCista = trzbaHruba - dan - setupFeeProdej;
+
+  // Srovnávací hodnota bez rizika — ať je vidět, co je zásluha města
+  // a co jen zvolený odhad ztrát.
+  const trzbaBezRizika = z.cenaVystupu.hodnota * z.pocetVyrobku;
+  const danBezRizika = Math.max(
+    trzbaBezRizika * sazbaDane, konstanty.minimalniDan * z.pocetVyrobku,
+  );
+  const setupBezRizika = z.rezimProdeje === "order"
+    ? trzbaBezRizika * sazbaSetupProdej : 0;
 
   // ── Výsledek ──────────────────────────────────────────────
   const zisk = trzbaCista - nakladyCelkem;
@@ -171,7 +206,10 @@ export function spocitat(
       nakladSuroviny, setupFeeNakup, poplatekStaniceKus, poplatekStaniceCelkem, silverCelkem, nakladyCelkem,
       trzbaHruba, dan, sazbaDane, setupFeeProdej, trzbaCista,
       zisk,
+      ziskBezRizika: trzbaBezRizika - danBezRizika - setupBezRizika - nakladyCelkem,
       marze: nakladyCelkem > 0 ? zisk / nakladyCelkem : 0,
+      // Na KUS, který jsi vyrobil — ne na ten, co dorazil. Suroviny, focus
+      // i poplatek jsi utratil za všechny, včetně ztracených.
       ziskNaKus: zisk / z.pocetVyrobku,
       focus,
       ziskNaFocus: focus > 0 ? zisk / focus : null,

@@ -10,6 +10,7 @@ import { SekceHistorie } from "./SekceHistorie";
 import { SekceRetezec } from "./SekceRetezec";
 import { OdchylkaOdMedianu } from "./OdznakLikvidity";
 import { stariDnu } from "../stav/skladHistorie";
+import { VYCHOZI_MOUNT, mount } from "../data/mounty";
 
 interface Props {
   radek: RadekSkenu;
@@ -28,6 +29,8 @@ interface Props {
    * Vstupy se pořád kupují v `zobrazeneMesto` — na BM se nenakupuje.
    */
   mistoProdeje?: string;
+  /** Na kolik jízd mountu se dávka veze. Undefined = neveze se nikam. */
+  jizd?: number;
   /** Server — historie se tahá pro něj. */
   server: Server;
   /** Lokace zobrazovaného města — pro bonusy v řetězu. */
@@ -102,10 +105,23 @@ export function DetailPolozky(p: Props) {
 
         {p.srovnaniMest && p.srovnaniMest.length > 0 && (
           <Sekce nadpis="Srovnání míst">
+            {/* Text MUSÍ odpovídat režimu. Tatáž tabulka tu má dva významy
+                a splést si je znamená splést si úplně jiná čísla. */}
             <p className="mb-2 text-xs text-slate-500">
-              Nákup i výroba vždy ve stejném městě — žádné skryté náklady na cestu.
-              U <b>→ BM</b> se výsledek prodává na Black Market, který je v Caerleonu
-              taky, takže se ani tam nikam necestuje.
+              {nastaveni.mistoProdeje === "bm-s-prevozem" ? (
+                <>
+                  Nákup i výroba ve městě, prodej vždy na <b>Black Market</b>.
+                  U všech měst kromě Caerleonu je v čísle{" "}
+                  <b>započtená ztráta {procenta(nastaveni.ztrataZasilek, 0)}</b> —
+                  Caerleon riziko nemá, protože se z něj nikam nejede.
+                </>
+              ) : (
+                <>
+                  Nákup i výroba vždy ve stejném městě — žádné skryté náklady na cestu.
+                  U <b>→ BM</b> se výsledek prodává na Black Market, který je
+                  v Caerleonu taky, takže se ani tam nikam necestuje.
+                </>
+              )}
             </p>
             {p.srovnaniMest.map(({ mesto: m, radek: r, nazevMista }) => {
               const zisk = r.vysledek?.zisk;
@@ -278,7 +294,23 @@ export function DetailPolozky(p: Props) {
               <Radek popis={<span className="text-xs text-slate-500">
                               Refining před cestou váhu snižuje</span>}
                      hodnota={<b>{cislo(v.vahaVstupu / v.vahaVystupu, 1)}×</b>} />
+              {/* Počet jízd dává smysl jen když se opravdu někam veze.
+                  U výroby na místě by to byl údaj bez obsahu. */}
+              {p.jizd !== undefined && (
+                <Radek popis={`Jízd na ${VYCHOZI_MOUNT}`}
+                       hodnota={<b>{cislo(p.jizd)}×</b>} />
+              )}
             </Sekce>
+
+            {/* Kolik připravilo riziko. Bez tohohle čísla nejde poznat,
+                jestli je rozdíl mezi městy dílem výroby, nebo odhadu ztrát. */}
+            {v.ziskBezRizika !== v.zisk && (
+              <p className="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-800
+                            dark:bg-amber-950/40 dark:text-amber-300">
+                Bez ztrát na cestě by to bylo <b>{seZnamenkem(v.ziskBezRizika)}</b> —
+                riziko ubírá {cislo(v.ziskBezRizika - v.zisk)}.
+              </p>
+            )}
 
             <p className="mt-3 text-xs text-slate-500">
               Focus celkem {cislo(v.focus)}

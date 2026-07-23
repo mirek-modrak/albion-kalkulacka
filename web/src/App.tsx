@@ -68,7 +68,10 @@ const VYCHOZI_NASTAVENI: NastaveniSkenu = {
   rezimProdeje: "order",
   skupina: SUROVINY_ID,
   kategorie: [],
-  prodejNaBlackMarketu: false,
+  mistoProdeje: "mesto",
+  // Nenulový výchozí odhad, ať se na riziko nezapomene — stejný precedent
+  // jako u převozu. Není v datech, je to odhad podle trasy.
+  ztrataZasilek: 0.05,
 };
 
 export function App() {
@@ -319,6 +322,21 @@ export function App() {
   const s = souhrn(radky);
   const sP = souhrnPrilezitosti(prilezitosti);
 
+  /**
+   * Na kolik jízd mountu se dávka veze.
+   *
+   * Undefined znamená „neveze se nikam" — buď se neprodává na Black Market
+   * s převozem, nebo se vyrábí rovnou v Caerleonu, kde BM je.
+   */
+  function jizdProMisto(v: { mesto: string; naBlackMarketu: boolean; radek: RadekSkenu }) {
+    if (nastaveni.mistoProdeje !== "bm-s-prevozem") return undefined;
+    if (!v.naBlackMarketu || v.mesto === "Caerleon") return undefined;
+    const kg = v.radek.vysledek?.vahaVystupu;
+    const nosnost = mount(VYCHOZI_MOUNT)?.kg;
+    if (!kg || !nosnost) return undefined;
+    return Math.ceil(kg / nosnost);
+  }
+
   // Řádek pro detail se dohledává podle klíče v ČERSTVÝCH datech,
   // aby detail po úpravě ceny ukázal nová čísla, ne ta při otevření.
   const detail = detailKlic
@@ -429,6 +447,9 @@ export function App() {
           // Black Market jen vykupuje — nakupovat se na něm nedá, proto
           // se předává zvlášť jako místo prodeje, ne jako město.
           mistoProdeje={detailPrilezitost.nejlepsi.naBlackMarketu ? BLACK_MARKET : undefined}
+          // Jízdy dávají smysl jen když se opravdu veze — tedy v režimu
+          // s převozem a ne u Caerleonu, odkud se nikam nejede.
+          jizd={jizdProMisto(detailPrilezitost.nejlepsi)}
           srovnaniMest={detailPrilezitost.vsechnaMesta.map((v) => ({
             mesto: v.mesto, nazevMista: v.nazevMista, radek: v.radek,
           }))}
@@ -448,7 +469,7 @@ export function App() {
           radek={detail}
           server={server}
           mistoProdeje={
-            nastaveni.prodejNaBlackMarketu
+            nastaveni.mistoProdeje !== "mesto"
             && lzeProdatNaBM(nastaveni.mesto, nastaveni.skupina)
               ? BLACK_MARKET : undefined
           }

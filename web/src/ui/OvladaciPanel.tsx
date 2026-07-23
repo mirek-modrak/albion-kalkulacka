@@ -1,8 +1,10 @@
 import { MESTA } from "../data/hra";
 import { SERVERY, type Server } from "../data/aodp";
 import { SKUPINY, SUROVINY_ID, kategorieSPocty, nazevKategorie } from "../data/kategorie";
+import { cislo } from "./format";
 import {
-  METRIKY, lzeProdatNaBM, potrebnaIds, type Metrika, type NastaveniSkenu,
+  METRIKY, bmObchodujeSkupinu, lzeProdatNaBM, potrebnaIds,
+  type Metrika, type NastaveniSkenu,
 } from "../stav/sken";
 import type { StavSkenu } from "../App";
 
@@ -42,9 +44,12 @@ export function OvladaciPanel(p: Props) {
   const uprav = <K extends keyof NastaveniSkenu>(klic: K, hodnota: NastaveniSkenu[K]) =>
     p.setNastaveni({ ...p.nastaveni, [klic]: hodnota });
 
-  const naBM = p.rezim === "mesto"
-    && p.nastaveni.prodejNaBlackMarketu
-    && lzeProdatNaBM(p.nastaveni.mesto, p.nastaveni.skupina);
+  const naBM = p.nastaveni.mistoProdeje !== "mesto"
+    && bmObchodujeSkupinu(p.nastaveni.skupina)
+    && (p.rezim === "prilezitosti" || lzeProdatNaBM(p.nastaveni.mesto, p.nastaveni.skupina));
+
+  /** Převoz na BM je otázka „kde vyrábět", což řeší jen srovnání měst. */
+  const lzePrevoz = p.rezim === "prilezitosti" && bmObchodujeSkupinu(p.nastaveni.skupina);
 
   return (
     <aside className="space-y-1 rounded-xl border border-slate-200 bg-white p-4
@@ -124,27 +129,59 @@ export function OvladaciPanel(p: Props) {
         <option value="instant">hned do buy orderů</option>
       </select>
 
-      {/* Black Market — jen když dává smysl. Nabízet ho u Thetfordu by
-          znamenalo mlčky předpokládat cestu do Caerleonu; nabízet ho
-          u surovin nemá smysl, ty tam neobchodují. */}
-      {/* Jen ve skenu jednoho města. V příležitostech je Black Market
-          automaticky osmým MÍSTEM ve srovnání, takže by tenhle přepínač
-          nedělal nic — a ovládací prvek bez účinku je horší než žádný. */}
+      {/* Black Market bez cesty — jen ve skenu města a jen z Caerleonu.
+          Nabízet to u Thetfordu by znamenalo mlčky předpokládat teleport;
+          od toho je varianta s převozem níž. */}
       {p.rezim === "mesto" && lzeProdatNaBM(p.nastaveni.mesto, p.nastaveni.skupina) && (
         <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md
                           border border-amber-400/60 bg-amber-50 p-2 text-sm
                           dark:bg-amber-950/30">
           <input type="checkbox" className="mt-0.5"
-                 checked={p.nastaveni.prodejNaBlackMarketu}
-                 onChange={(e) => uprav("prodejNaBlackMarketu", e.target.checked)} />
+                 checked={p.nastaveni.mistoProdeje !== "mesto"}
+                 onChange={(e) => uprav("mistoProdeje", e.target.checked ? "bm" : "mesto")} />
           <span>
             Prodat na <b>Black Market</b>
             <span className="block text-xs text-slate-500 dark:text-slate-400">
               Výbavu na běžné caerleonské tržnici skoro nikdo nekupuje —
-              vykupuje ji Black Market. Nižší setup fee (1,5 %).
+              vykupuje ji Black Market za pevnou výkupní cenu.
             </span>
           </span>
         </label>
+      )}
+
+      {/* Výroba mimo Caerleon + převoz na BM. Jen v příležitostech —
+          je to otázka „kde vyrábět", a tu zodpoví jedině srovnání měst. */}
+      {lzePrevoz && (
+        <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md
+                          border border-amber-400/60 bg-amber-50 p-2 text-sm
+                          dark:bg-amber-950/30">
+          <input type="checkbox" className="mt-0.5"
+                 checked={p.nastaveni.mistoProdeje === "bm-s-prevozem"}
+                 onChange={(e) => uprav("mistoProdeje", e.target.checked ? "bm-s-prevozem" : "mesto")} />
+          <span>
+            Prodat na <b>Black Market</b> včetně převozu
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              Vyrobit ve městě s bonusem a levnějšími surovinami, odvézt
+              do Caerleonu a prodat do výkupu. Suroviny bývají v Caerleonu
+              o desítky procent dražší — proto se to často vyplatí i s rizikem.
+            </span>
+          </span>
+        </label>
+      )}
+
+      {p.nastaveni.mistoProdeje === "bm-s-prevozem" && lzePrevoz && (
+        <>
+          <Popisek>
+            Riziko převozu do Caerleonu — <b>{cislo(p.nastaveni.ztrataZasilek * 100, 0)} %</b> zásilek
+          </Popisek>
+          <input type="range" min={0} max={50} step={1} className="w-full"
+                 value={Math.round(p.nastaveni.ztrataZasilek * 100)}
+                 onChange={(e) => uprav("ztrataZasilek", Number(e.target.value) / 100)} />
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Odhad, není v datech. Caerleon leží v černé zóně. Výroba přímo
+            v Caerleonu riziko nemá — odtud se nikam nejede.
+          </p>
+        </>
       )}
 
       {p.stav.druh === "bezi" ? (

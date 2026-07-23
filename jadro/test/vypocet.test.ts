@@ -260,3 +260,68 @@ describe("crafting předmětu prochází stejným výpočtem", () => {
     expect(v.hodnota.focus).toBe(22_510);
   });
 });
+
+describe("ztráta zásilek cestou", () => {
+  const zaklad = {
+    polozka: najdi("T5_METALBAR"),
+    enchant: 0 as const,
+    pocetVyrobku: 100,
+    bonusy: { mesto: "Thetford", focus: false, denniBonus: 0 },
+    lokace: mesto("Thetford"),
+    cenaVystupu: cena(1000),
+    premium: true,
+    sazbaStanice: 200,
+    rezimNakupu: "instant" as const,
+    rezimProdeje: "instant" as const,
+    cenyVstupu: new Map([["T5_ORE#0", cena(400)], ["T4_METALBAR#0", cena(300)]]),
+  };
+
+  const spocti = (ztrata?: number) => {
+    const v = spocitat({ ...zaklad, ztrataZasilek: ztrata }, data.konstanty, vahaVstupu);
+    if (!v.ok) throw new Error("mělo projít");
+    return v.hodnota;
+  };
+
+  it("bez zadání se nic neztrácí — zpětná kompatibilita", () => {
+    expect(spocti().zisk).toBe(spocti(0).zisk);
+    expect(spocti().ziskBezRizika).toBe(spocti().zisk);
+  });
+
+  it("ztráta snižuje TRŽBU, náklady zůstávají", () => {
+    // Celý smysl toho rizika: co se ztratí, to se neprodá — ale vyrobit
+    // se to muselo. Kdyby se krátily i náklady, riziko by nic nestálo.
+    const bez = spocti(0);
+    const s = spocti(0.1);
+    expect(s.nakladyCelkem).toBe(bez.nakladyCelkem);
+    expect(s.trzbaHruba).toBeCloseTo(bez.trzbaHruba * 0.9, 6);
+    expect(s.zisk).toBeLessThan(bez.zisk);
+  });
+
+  it("daň se platí jen z toho, co dorazí", () => {
+    expect(spocti(0.25).dan).toBeCloseTo(spocti(0).dan * 0.75, 6);
+  });
+
+  it("ziskBezRizika ukazuje, co by to bylo bez ztrát", () => {
+    const s = spocti(0.2);
+    expect(s.ziskBezRizika).toBe(spocti(0).zisk);
+    expect(s.ziskBezRizika).toBeGreaterThan(s.zisk);
+  });
+
+  it("stoprocentní ztráta = žádná tržba, ale plné náklady", () => {
+    const s = spocti(1);
+    expect(s.trzbaHruba).toBe(0);
+    expect(s.dan).toBe(0);
+    expect(s.zisk).toBe(-s.nakladyCelkem);
+  });
+
+  it("nesmyslné hodnoty se ořežou, nespadne to", () => {
+    expect(spocti(-5).zisk).toBe(spocti(0).zisk);
+    expect(spocti(99).zisk).toBe(spocti(1).zisk);
+  });
+
+  it("zisk na kus se dělí VYROBENÝMI, ne doručenými", () => {
+    // Suroviny, focus i poplatek jsi utratil za všechny kusy včetně ztracených.
+    const s = spocti(0.5);
+    expect(s.ziskNaKus).toBeCloseTo(s.zisk / 100, 6);
+  });
+});

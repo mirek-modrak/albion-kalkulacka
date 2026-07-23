@@ -334,13 +334,13 @@ describe("Black Market ve výpočtu", () => {
   ).filter((r) => r.vysledek !== null);
 
   it("s vypnutým BM se prodává za cenu z Caerleonu", () => {
-    const r = spocitej({ mesto: "Caerleon", prodejNaBlackMarketu: false });
+    const r = spocitej({ mesto: "Caerleon", mistoProdeje: "mesto" });
     expect(r.length).toBeGreaterThan(0);
     expect(r.every((x) => x.vysledek!.trzbaHruba === 1_000)).toBe(true);
   });
 
   it("se zapnutým BM se prodává za cenu z Black Marketu", () => {
-    const r = spocitej({ mesto: "Caerleon", prodejNaBlackMarketu: true });
+    const r = spocitej({ mesto: "Caerleon", mistoProdeje: "bm" });
     expect(r.length).toBeGreaterThan(0);
     expect(r.every((x) => x.vysledek!.trzbaHruba === 5_000)).toBe(true);
   });
@@ -349,7 +349,7 @@ describe("Black Market ve výpočtu", () => {
     // Nejdůležitější negativní test celého kroku. Kdyby guard nefungoval,
     // aplikace by u Thetfordu počítala s cenou z Caerleonu zdarma.
     const r = spocitatSken(
-      { ...zaklad, mesto: "Thetford", prodejNaBlackMarketu: true } as never,
+      { ...zaklad, mesto: "Thetford", mistoProdeje: "bm" } as never,
       skladSObemaCenami(), lokace("Thetford"), HRA.konstanty, (z, e) => `${z}#${e}`,
     ).filter((x) => x.vysledek !== null);
     // V Thetfordu nejsou ani vstupy, ani výstup → nic se nespočítá.
@@ -359,16 +359,16 @@ describe("Black Market ve výpočtu", () => {
   it("vstupy se berou z MĚSTA i při prodeji na BM — na BM se nenakupuje", () => {
     // Sklad má vstupy výhradně v Caerleonu. Kdyby je výpočet hledal na BM,
     // všechny řádky by skončily na „chybí cena".
-    const r = spocitej({ mesto: "Caerleon", prodejNaBlackMarketu: true });
+    const r = spocitej({ mesto: "Caerleon", mistoProdeje: "bm" });
     expect(r.every((x) => x.vysledek!.nakladSuroviny > 0)).toBe(true);
   });
 
   it("sell order ve městě stojí 2,5 %, prodej do výkupu na BM nic", () => {
     const bezBM = spocitej({
-      mesto: "Caerleon", prodejNaBlackMarketu: false, rezimProdeje: "order",
+      mesto: "Caerleon", mistoProdeje: "mesto", rezimProdeje: "order",
     });
     const sBM = spocitej({
-      mesto: "Caerleon", prodejNaBlackMarketu: true, rezimProdeje: "order",
+      mesto: "Caerleon", mistoProdeje: "bm", rezimProdeje: "order",
     });
     // Setup fee se počítá z tržby, takže srovnáme podíl, ne absolutní číslo.
     expect(bezBM[0]!.vysledek!.setupFeeProdej / bezBM[0]!.vysledek!.trzbaHruba)
@@ -415,7 +415,7 @@ describe("prodej do výkupu neplatí setup fee", () => {
   }
 
   const spocitej = (rezimProdeje: "instant" | "order") => spocitatSken(
-    { ...zaklad, mesto: "Caerleon", prodejNaBlackMarketu: true, rezimProdeje } as never,
+    { ...zaklad, mesto: "Caerleon", mistoProdeje: "bm", rezimProdeje } as never,
     sklad(), lokace("Caerleon"), HRA.konstanty, (z, e) => `${z}#${e}`,
   ).filter((r) => r.vysledek !== null);
 
@@ -436,5 +436,58 @@ describe("prodej do výkupu neplatí setup fee", () => {
 
   it("daň z prodeje se ale platí dál", () => {
     expect(spocitej("order").every((x) => x.vysledek!.dan > 0)).toBe(true);
+  });
+});
+
+describe("riziko převozu na Black Market", () => {
+  const zaklad = {
+    focus: false, denniBonus: 0, premium: true, sazbaStanice: 200,
+    pocetVyrobku: 100, rezimNakupu: "instant" as const, rezimProdeje: "instant" as const,
+    skupina: "zbrane", kategorie: ["sword"], ztrataZasilek: 0.2,
+  };
+
+  function sklad() {
+    const s = new SkladCen();
+    for (const { polozka, enchant } of kombinaceProSken("zbrane", ["sword"])) {
+      const v = polozka.varianty.find((x) => x.enchant === enchant);
+      for (const m of ["Caerleon", "Lymhurst"]) {
+        for (const vstup of v?.vstupy ?? []) {
+          s.ulozRucne(m, vstup.zaklad, vstup.enchant, "sell_min", 100);
+        }
+      }
+      s.ulozRucne("Black Market", polozka.zaklad, enchant, "buy_max", 10_000);
+    }
+    return s;
+  }
+
+  const spocti = (mesto: string, mistoProdeje: string) => spocitatSken(
+    { ...zaklad, mesto, mistoProdeje } as never,
+    sklad(), lokace(mesto), HRA.konstanty, (z, e) => `${z}#${e}`,
+  ).filter((r) => r.vysledek !== null);
+
+  it("z Lymhurstu se na BM prodat DÁ, když je převoz zapnutý", () => {
+    // Bez převozu to guard blokuje, aby se nepředstíral teleport.
+    expect(spocti("Lymhurst", "bm")).toHaveLength(0);
+    expect(spocti("Lymhurst", "bm-s-prevozem").length).toBeGreaterThan(0);
+  });
+
+  it("ztráta sníží tržbu o svůj podíl", () => {
+    const r = spocti("Lymhurst", "bm-s-prevozem");
+    expect(r.every((x) => x.vysledek!.trzbaHruba === 10_000 * 100 * 0.8)).toBe(true);
+  });
+
+  it("CAERLEON riziko NEMÁ — odtud se nikam nejede", () => {
+    // Nejdůležitější test režimu. Kdyby Caerleon dostal ztrátu taky,
+    // trestal by se za cestu, kterou nepodniká, a celé srovnání
+    // „vyrobit doma vs. odvézt" by bylo posunuté ve prospěch cizích měst.
+    const r = spocti("Caerleon", "bm-s-prevozem");
+    expect(r.length).toBeGreaterThan(0);
+    expect(r.every((x) => x.vysledek!.trzbaHruba === 10_000 * 100)).toBe(true);
+    expect(r.every((x) => x.vysledek!.zisk === x.vysledek!.ziskBezRizika)).toBe(true);
+  });
+
+  it("ziskBezRizika ukazuje, o kolik riziko připravilo", () => {
+    const r = spocti("Lymhurst", "bm-s-prevozem");
+    expect(r.every((x) => x.vysledek!.ziskBezRizika > x.vysledek!.zisk)).toBe(true);
   });
 });

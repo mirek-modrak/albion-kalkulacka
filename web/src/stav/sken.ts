@@ -33,33 +33,53 @@ export interface NastaveniSkenu {
   skupina: string;
   /** Zúžení na konkrétní kategorie ve skupině. Prázdné = celá skupina. */
   kategorie: string[];
+  /** Kam se prodává výsledek. */
+  mistoProdeje: MistoProdeje;
   /**
-   * Prodávat výsledek na Black Marketu místo na tržnici v `mesto`.
-   *
-   * Dává smysl **jen když `mesto` je Caerleon** — Black Market tam fyzicky
-   * je a jinam se z něj nedá prodávat bez cesty. Vynucuje to `lzeProdatNaBM`
-   * a ovládací panel, protože jinak by výpočet mlčky předpokládal teleport.
-   *
-   * Mění dvě věci: odkud se bere prodejní cena, a setup fee (1,5 % místo
-   * 2,5 %). Bonusy výroby zůstávají Caerleonu — na Black Marketu se nevyrábí.
+   * Podíl zásilek ztracených cestou, 0–1. Uplatní se jen u `bm-s-prevozem`,
+   * a ani tam ne při výrobě v Caerleonu — odtud se nikam nejede.
    */
-  prodejNaBlackMarketu: boolean;
+  ztrataZasilek: number;
 }
 
 /**
- * Lze v téhle konfiguraci prodávat na Black Market?
+ * Kam se prodává výsledek.
  *
- * Dvě podmínky. Caerleon proto, že jinde BM není. Výbava proto, že
- * suroviny BM neobchoduje — ověřeno: T5 Planks i T5 Metal Bar mají na BM
- * v týdenním okně nulový objem, zatímco na běžných tržnicích statisíce.
- * Bez druhé podmínky by refining sken dostal 115 prázdných řádků navíc.
+ * Tři stavy, ne dva booleany. „Vezu to na BM, ale neprodávám tam" je
+ * nesmysl, který by se dvěma příznaky šel nastavit — takhle ne.
  */
-export function lzeProdatNaBM(mesto: string, skupina: string): boolean {
-  return mesto === BLACK_MARKET_MESTO && skupina !== SUROVINY_ID;
-}
+export type MistoProdeje =
+  /** Tržnice ve městě výroby. */
+  | "mesto"
+  /** Black Market bez cesty — jen při výrobě v Caerleonu, kde BM je. */
+  | "bm"
+  /** Black Market s převozem — vyrábí se kdekoli, výrobek se tam veze. */
+  | "bm-s-prevozem";
 
 /** Město, ve kterém Black Market fyzicky je. */
-const BLACK_MARKET_MESTO = "Caerleon";
+export const BLACK_MARKET_MESTO = "Caerleon";
+
+/**
+ * Obchoduje Black Market tuhle skupinu?
+ *
+ * Suroviny ne — ověřeno: T5 Planks i T5 Metal Bar mají na BM v týdenním
+ * okně nulový objem, zatímco na běžných tržnicích statisíce kusů.
+ * Bez téhle podmínky by refining sken dostal 115 prázdných řádků navíc.
+ */
+export function bmObchodujeSkupinu(skupina: string): boolean {
+  return skupina !== SUROVINY_ID;
+}
+
+/**
+ * Lze prodat na Black Market BEZ cesty?
+ *
+ * Jen z Caerleonu, kde BM fyzicky je. Jinde by to znamenalo mlčky
+ * předpokládat teleport — a právě proto existuje `bm-s-prevozem`,
+ * kde je cesta vidět jako riziko a počet jízd.
+ */
+export function lzeProdatNaBM(mesto: string, skupina: string): boolean {
+  return mesto === BLACK_MARKET_MESTO && bmObchodujeSkupinu(skupina);
+}
 
 export type StavRadku = "ok" | "chybi-cena" | "podezrele";
 
@@ -218,13 +238,28 @@ export function spocitatSken(
 
   // Kde se PRODÁVÁ. Liší se od `mesto` jen u Black Marketu — nakupuje se
   // a vyrábí pořád v `mesto`, protože na BM nejsou ani suroviny, ani stanice.
-  const naBM = nastaveni.prodejNaBlackMarketu && lzeProdatNaBM(nastaveni.mesto, nastaveni.skupina);
+  // Vyjmenovat kladné hodnoty, ne `!== "mesto"`. Uložené nastavení ze starší
+  // verze tohle pole nemá a `undefined !== "mesto"` by zapnulo Black Market
+  // někomu, kdo o něj nepožádal.
+  const sPrevozem = nastaveni.mistoProdeje === "bm-s-prevozem";
+  const naBM = (sPrevozem || nastaveni.mistoProdeje === "bm")
+    && bmObchodujeSkupinu(nastaveni.skupina)
+    // Bez převozu se na BM dostaneš jen z Caerleonu.
+    && (sPrevozem || nastaveni.mesto === BLACK_MARKET_MESTO);
+
   const mistoProdeje = naBM ? BLACK_MARKET : nastaveni.mesto;
   const typProdej = typProdejeProMisto(nastaveni.rezimProdeje, naBM);
 
   // Na Black Marketu se neklade order, prodává se rovnou do výkupu —
   // proto se neplatí setup fee. Daň z prodeje platí dál.
   const rezimProdeje = naBM ? "instant" : nastaveni.rezimProdeje;
+
+  // Riziko jen když se opravdu jede. Z Caerleonu na BM se nejede nikam,
+  // takže tam musí být nula — jinak by se Caerleon trestal za cestu,
+  // kterou nepodniká, a celé srovnání by bylo posunuté.
+  const ztrata = naBM && sPrevozem && nastaveni.mesto !== BLACK_MARKET_MESTO
+    ? nastaveni.ztrataZasilek
+    : 0;
   const radky: RadekSkenu[] = [];
   const typNakup = typProNakup(nastaveni.rezimNakupu);
 
@@ -303,6 +338,7 @@ export function spocitatSken(
       // vůbec. Nižší sazba 1,5 % by se uplatnila jen u sell orderu na BM,
       // což podle herních pravidel není, jak Black Market funguje.
       prodejNaBlackMarketu: naBM,
+      ztrataZasilek: ztrata,
     }, konstanty, vahaVstupu);
 
     if (!v.ok) {

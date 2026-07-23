@@ -15,8 +15,8 @@ import { MESTA, lokace } from "../data/hra";
 import type { SkladCen } from "./skladCen";
 import type { SkladHistorie } from "./skladHistorie";
 import {
-  hodnotaMetriky, lzeProdatNaBM, spocitatSken,
-  type Metrika, type NastaveniSkenu, type RadekSkenu,
+  BLACK_MARKET_MESTO, bmObchodujeSkupinu, hodnotaMetriky, lzeProdatNaBM, spocitatSken,
+  type Metrika, type MistoProdeje, type NastaveniSkenu, type RadekSkenu,
 } from "./sken";
 
 export interface VysledekVMeste {
@@ -32,19 +32,31 @@ export interface VysledekVMeste {
 /**
  * Místa, mezi kterými se srovnává.
  *
- * Sedm měst plus — u výbavy — Caerleon s prodejem na Black Market.
- * Ten je osmým MÍSTEM, ne osmým městem: vyrábí se pořád v Caerleonu
- * a s jeho bonusy, mění se jen kde se výsledek prodává.
+ * Dva různé režimy, ne jeden se zapnutým příznakem:
+ *
+ * - **`mesto` / `bm`** — sedm měst (nákup, výroba i prodej na místě),
+ *   u výbavy plus Caerleon s prodejem na Black Market. Nikde se necestuje.
+ * - **`bm-s-prevozem`** — sedm měst, ale prodává se VŽDY na Black Market.
+ *   Každé město je pak „vyrob tady a odvez do Caerleonu", jen Caerleon
+ *   sám nikam nejede.
+ *
+ * Black Market je MÍSTO, ne osmé město — vyrábí se pořád ve městě
+ * a s jeho bonusy, mění se jen kam jde výsledek.
  */
-export function mistaProSrovnani(skupina: string): { mesto: string; naBlackMarketu: boolean }[] {
+export function mistaProSrovnani(
+  skupina: string,
+  mistoProdeje: MistoProdeje,
+): { mesto: string; naBlackMarketu: boolean }[] {
+  if (mistoProdeje === "bm-s-prevozem" && bmObchodujeSkupinu(skupina)) {
+    return MESTA.map((m) => ({ mesto: m.nazev, naBlackMarketu: true }));
+  }
+
   const mista = MESTA.map((m) => ({ mesto: m.nazev, naBlackMarketu: false }));
   if (lzeProdatNaBM(BLACK_MARKET_MESTO, skupina)) {
     mista.push({ mesto: BLACK_MARKET_MESTO, naBlackMarketu: true });
   }
   return mista;
 }
-
-const BLACK_MARKET_MESTO = "Caerleon";
 
 const nazevMista = (mesto: string, naBM: boolean) => (naBM ? `${mesto} → BM` : mesto);
 
@@ -78,15 +90,21 @@ export function spocitatNapricMesty(
 ): Prilezitost[] {
   const podlePolozky = new Map<string, VysledekVMeste[]>();
 
-  for (const misto of mistaProSrovnani(nastaveni.skupina)) {
+  for (const misto of mistaProSrovnani(nastaveni.skupina, nastaveni.mistoProdeje)) {
     // Bonusy se liší podle města I podle položky — Thetford dává +0,40
     // na rudu, ale nic na dřevo. Proto se předává lokace toho města.
     // U Black Marketu je to pořád lokace Caerleonu: vyrábí se ve městě.
     //
     // Likvidita se počítá pro KAŽDÉ místo zvlášť, ne jen pro vítěze —
     // jinak by nešlo poznat, že vítězné místo vyhrálo na mrtvém trhu.
+    // Místo prodeje se dopočítá z toho, co srovnání vybralo — jinak by
+    // se v režimu bez převozu prodávalo na BM i z měst, odkud to nejde.
+    const mistoProdeje: MistoProdeje = misto.naBlackMarketu
+      ? (nastaveni.mistoProdeje === "bm-s-prevozem" ? "bm-s-prevozem" : "bm")
+      : "mesto";
+
     const radky = spocitatSken(
-      { ...nastaveni, mesto: misto.mesto, prodejNaBlackMarketu: misto.naBlackMarketu },
+      { ...nastaveni, mesto: misto.mesto, mistoProdeje },
       sklad, lokace(misto.mesto), konstanty, nazevPolozky, historie,
     );
 
