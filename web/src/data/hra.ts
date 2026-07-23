@@ -27,6 +27,20 @@ export function vaha(zaklad: string): number {
 /** Města s bonusy, v pořadí, v jakém je má smysl nabízet. */
 export const MESTA: Lokace[] = HRA.lokace.filter((l) => l.typ === "mesto");
 
+/**
+ * Black Market — název lokace tak, jak ho zná AODP.
+ *
+ * **Není to město a NESMÍ být v `MESTA`.** Nemá crafting ani refining bonus,
+ * nedá se v něm vyrábět a nedá se do něj cestovat jinak než přes Caerleon,
+ * ve kterém fyzicky je. Kdyby se dostal mezi města, rozbil by bonusy,
+ * srovnání měst i převozní trasy.
+ *
+ * Je to **místo prodeje**. U výbavy navíc to hlavní: naměřeno 2026-07-23,
+ * že T6 Main Sword má na běžné caerleonské tržnici za 30 dní nula obchodů,
+ * zatímco na Black Marketu ~129 kusů denně.
+ */
+export const BLACK_MARKET = "Black Market";
+
 export function lokace(nazev: string): Lokace | undefined {
   return HRA.lokace.find((l) => l.nazev === nazev);
 }

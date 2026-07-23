@@ -17,7 +17,7 @@ Otevře se na `http://localhost:5180`. Vyber město, klikni na
 co se právě teď nejvíc vyplatí refinovat.
 
 ```bash
-npm test        # 241 testů
+npm test        # 307 testů
 npm run build   # produkční build
 ```
 
@@ -54,7 +54,7 @@ vzorce existují jen jednou.
 | Příkaz | Co dělá |
 |---|---|
 | `npm run dev` | vývojový server na portu 5180 |
-| `npm test` | zlaté vektory (241 testů) |
+| `npm test` | zlaté vektory (307 testů) |
 | `npm run kontrola` | typová kontrola |
 | `npm run build` | produkční build |
 | `npm run generuj` | **znovu stáhne herní data** z ao-bin-dumps |

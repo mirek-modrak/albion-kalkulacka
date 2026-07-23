@@ -13,15 +13,40 @@
 import type { Konstanty } from "@albion/jadro";
 import { MESTA, lokace } from "../data/hra";
 import type { SkladCen } from "./skladCen";
+import type { SkladHistorie } from "./skladHistorie";
 import {
-  hodnotaMetriky, spocitatSken,
+  hodnotaMetriky, lzeProdatNaBM, spocitatSken,
   type Metrika, type NastaveniSkenu, type RadekSkenu,
 } from "./sken";
 
 export interface VysledekVMeste {
+  /** Město VÝROBY. U Black Marketu je to Caerleon — vyrábí se pořád ve městě. */
   mesto: string;
+  /** Prodej jde na Black Market místo na tržnici. */
+  naBlackMarketu: boolean;
+  /** Co ukázat uživateli — „Martlock" nebo „Caerleon → BM". */
+  nazevMista: string;
   radek: RadekSkenu;
 }
+
+/**
+ * Místa, mezi kterými se srovnává.
+ *
+ * Sedm měst plus — u výbavy — Caerleon s prodejem na Black Market.
+ * Ten je osmým MÍSTEM, ne osmým městem: vyrábí se pořád v Caerleonu
+ * a s jeho bonusy, mění se jen kde se výsledek prodává.
+ */
+export function mistaProSrovnani(skupina: string): { mesto: string; naBlackMarketu: boolean }[] {
+  const mista = MESTA.map((m) => ({ mesto: m.nazev, naBlackMarketu: false }));
+  if (lzeProdatNaBM(BLACK_MARKET_MESTO, skupina)) {
+    mista.push({ mesto: BLACK_MARKET_MESTO, naBlackMarketu: true });
+  }
+  return mista;
+}
+
+const BLACK_MARKET_MESTO = "Caerleon";
+
+const nazevMista = (mesto: string, naBM: boolean) => (naBM ? `${mesto} → BM` : mesto);
 
 export interface Prilezitost {
   klic: string;
@@ -29,8 +54,10 @@ export interface Prilezitost {
   nejlepsi: VysledekVMeste;
   /** Druhé nejlepší město — bez něj nejde poznat, jestli je náskok velký. */
   druhe: VysledekVMeste | null;
-  /** V kolika městech se to podařilo spočítat. Málo měst = slabší výsledek. */
+  /** V kolika místech se to podařilo spočítat. Málo míst = slabší výsledek. */
   spocitanoMest: number;
+  /** Kolik míst se vůbec srovnávalo. Není konstanta — u výbavy přibývá BM. */
+  pocetMist: number;
   vsechnaMesta: VysledekVMeste[];
 }
 
@@ -47,21 +74,31 @@ export function spocitatNapricMesty(
   konstanty: Konstanty,
   nazevPolozky: (zaklad: string, enchant: number) => string,
   metrika: Metrika,
+  historie?: SkladHistorie,
 ): Prilezitost[] {
   const podlePolozky = new Map<string, VysledekVMeste[]>();
 
-  for (const mesto of MESTA) {
+  for (const misto of mistaProSrovnani(nastaveni.skupina)) {
     // Bonusy se liší podle města I podle položky — Thetford dává +0,40
     // na rudu, ale nic na dřevo. Proto se předává lokace toho města.
+    // U Black Marketu je to pořád lokace Caerleonu: vyrábí se ve městě.
+    //
+    // Likvidita se počítá pro KAŽDÉ místo zvlášť, ne jen pro vítěze —
+    // jinak by nešlo poznat, že vítězné místo vyhrálo na mrtvém trhu.
     const radky = spocitatSken(
-      { ...nastaveni, mesto: mesto.nazev },
-      sklad, lokace(mesto.nazev), konstanty, nazevPolozky,
+      { ...nastaveni, mesto: misto.mesto, prodejNaBlackMarketu: misto.naBlackMarketu },
+      sklad, lokace(misto.mesto), konstanty, nazevPolozky, historie,
     );
 
     for (const radek of radky) {
       const klic = `${radek.polozka.zaklad}#${radek.enchant}`;
       const seznam = podlePolozky.get(klic) ?? [];
-      seznam.push({ mesto: mesto.nazev, radek });
+      seznam.push({
+        mesto: misto.mesto,
+        naBlackMarketu: misto.naBlackMarketu,
+        nazevMista: nazevMista(misto.mesto, misto.naBlackMarketu),
+        radek,
+      });
       podlePolozky.set(klic, seznam);
     }
   }
@@ -82,6 +119,7 @@ export function spocitatNapricMesty(
       nejlepsi,
       druhe: serazena[1] ?? null,
       spocitanoMest: vsechna.filter((v) => v.radek.vysledek !== null).length,
+      pocetMist: vsechna.length,
       vsechnaMesta: serazena,
     });
   }
@@ -120,7 +158,8 @@ export function souhrnPrilezitosti(prilezitosti: Prilezitost[]) {
   // Které město vyhrává nejčastěji — zajímavé samo o sobě.
   const pocty = new Map<string, number>();
   for (const p of ziskove) {
-    pocty.set(p.nejlepsi.mesto, (pocty.get(p.nejlepsi.mesto) ?? 0) + 1);
+    // Podle MÍSTA, ne města — „Caerleon → BM" je jiná odpověď než „Caerleon".
+    pocty.set(p.nejlepsi.nazevMista, (pocty.get(p.nejlepsi.nazevMista) ?? 0) + 1);
   }
   const podleMest = [...pocty.entries()]
     .map(([mesto, pocet]) => ({ mesto, pocet }))
@@ -130,8 +169,10 @@ export function souhrnPrilezitosti(prilezitosti: Prilezitost[]) {
     celkem: prilezitosti.length,
     ziskove: ziskove.length,
     bezDat: prilezitosti.filter((p) => p.spocitanoMest === 0).length,
-    // Kolik položek má data ze všech měst — jen u nich je srovnání úplné.
-    uplneSrovnani: prilezitosti.filter((p) => p.spocitanoMest === MESTA.length).length,
+    // Kolik položek má data ze všech míst — jen u nich je srovnání úplné.
+    // Porovnává se s `pocetMist` položky, ne s MESTA.length: u výbavy
+    // je míst osm, u surovin sedm.
+    uplneSrovnani: prilezitosti.filter((p) => p.spocitanoMest === p.pocetMist).length,
     podleMest,
   };
 }

@@ -151,10 +151,64 @@ export interface SerieHistorie {
 }
 
 /**
+ * Stáhne 30denní historii pro VÍC položek naráz.
+ *
+ * Endpoint `/stats/history` bere seznam ID úplně stejně jako `/prices` —
+ * `nactiHistorii` níž posílá jednu položku jen proto, že ji volá detail.
+ * Sken jich potřebuje stovky: po jedné by to bylo 230 dotazů (~4 minuty
+ * a hluboko přes limit), v dávkách jsou to 3.
+ *
+ * Ověřeno naostro 2026-07-23: 75 ID × 7 měst × 30 dní = 853 kB, 0,66 s.
+ * Enchantovaná ID se vracejí beze změny (`T5_PLANKS_LEVEL1@1`), takže
+ * je lze mapovat zpět stejným `rozlozId` jako u cen.
+ *
+ * **Okno je 30 dní** (výchozí chování endpointu, proto se `date` neposílá).
+ * Kratší okno by ušetřilo data, ale nerozlišilo by „tady se neobchoduje"
+ * od „tady poslední týden nikdo neskenoval" — a přesně kvůli tomu rozdílu
+ * se historie tahá. Naměřeno: T5 Main Sword má v okně 7 dní ve všech
+ * královských městech nulu, ale v okně 30 dní má Lymhurst 23 dní dat.
+ */
+export async function nactiHistoriiDavkove(
+  server: Server,
+  ids: string[],
+  mesta: string[],
+  signal?: AbortSignal,
+  naPrubeh?: (p: Prubeh) => void,
+): Promise<SerieHistorie[]> {
+  const chvost = `?locations=${mesta.map(encodeURIComponent).join(",")}`
+    + `&time-scale=24&qualities=1`;
+  const davky = rozdelDoDavek(ids, chvost.length + 80);
+
+  const vysledek: SerieHistorie[] = [];
+
+  for (const [i, davka] of davky.entries()) {
+    if (signal?.aborted) throw new DOMException("zrušeno", "AbortError");
+    await pockejNaRadu();
+
+    const url = `https://${server}.albion-online-data.com/api/v2/stats/history/`
+      + `${davka.join(",")}.json${chvost}`;
+
+    const odpoved = await fetch(url, { signal });
+
+    if (odpoved.status === 429) {
+      throw new ChybaAodp("AODP odmítlo dotaz kvůli limitu. Zkus to za chvíli.", 429);
+    }
+    if (!odpoved.ok) {
+      throw new ChybaAodp(`AODP vrátilo HTTP ${odpoved.status}`, odpoved.status);
+    }
+
+    vysledek.push(...((await odpoved.json()) as SerieHistorie[]));
+    naPrubeh?.({ hotovo: i + 1, celkem: davky.length });
+  }
+
+  return vysledek;
+}
+
+/**
  * Stáhne 30denní historii pro jednu položku ve více městech.
  *
  * Volá se **až na vyžádání** (otevření detailu), ne při skenu —
- * sken už dělá 2–23 dotazů a historie pro každou položku by limit rozbila.
+ * sken používá dávkovou variantu výš.
  *
  * @param casovaOsa 1 = hodinově, 6 = po šesti hodinách, 24 = denně
  */

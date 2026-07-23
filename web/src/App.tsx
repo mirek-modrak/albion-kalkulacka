@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { HRA, MESTA, VERZE_DAT, lokace, polozka } from "./data/hra";
-import { SERVERY, nactiCeny, type Server } from "./data/aodp";
+import { BLACK_MARKET, HRA, MESTA, VERZE_DAT, lokace, polozka } from "./data/hra";
+import { SERVERY, nactiCeny, nactiHistoriiDavkove, type Server } from "./data/aodp";
 import { SUROVINY_ID } from "./data/kategorie";
 import { VYCHOZI_MOUNT, mount } from "./data/mounty";
-import { nacti, uloz, zapomen } from "./stav/uloziste";
-import { SkladCen } from "./stav/skladCen";
 import {
-  METRIKY, potrebnaIds, rozlozId, seradit, souhrn, spocitatSken,
+  nacti, uloz, zapomen,
+  nactiUlozenouHistorii, ulozHistorii, zapomenHistorii,
+} from "./stav/uloziste";
+import { SkladCen } from "./stav/skladCen";
+import { SkladHistorie } from "./stav/skladHistorie";
+import {
+  METRIKY, lzeProdatNaBM, potrebnaIds, rozlozId, seradit, skenovanaIds,
+  souhrn, spocitatSken,
   type Metrika, type NastaveniSkenu, type RadekSkenu, type RezimCeny,
 } from "./stav/sken";
 import { OvladaciPanel } from "./ui/OvladaciPanel";
@@ -42,8 +47,12 @@ function nazevPolozky(zaklad: string, enchant: number): string {
 
 type StavSkenu =
   | { druh: "necinny" }
-  | { druh: "bezi"; hotovo: number; celkem: number }
-  | { druh: "hotovo"; ulozeno: number; zachovanoRucnich: number; kdy: Date }
+  | { druh: "bezi"; hotovo: number; celkem: number; faze: "ceny" | "historie" }
+  | {
+      druh: "hotovo"; ulozeno: number; zachovanoRucnich: number; kdy: Date;
+      /** Historie je doplněk — když selže, sken platí dál. Musí to být ale vidět. */
+      historieChyba?: string;
+    }
   | { druh: "chyba"; zprava: string };
 
 /** Výchozí nastavení. Uložené hodnoty ho přepíšou, ne nahradí — kdyby
@@ -59,6 +68,7 @@ const VYCHOZI_NASTAVENI: NastaveniSkenu = {
   rezimProdeje: "order",
   skupina: SUROVINY_ID,
   kategorie: [],
+  prodejNaBlackMarketu: false,
 };
 
 export function App() {
@@ -105,6 +115,16 @@ export function App() {
   }
   const [verzeCen, setVerzeCen] = useState(0);
 
+  // Sklad skutečných obchodů. Odděleně od cen, protože odpovídá na jinou
+  // otázku: ceny říkají „za kolik se nabízí", tenhle „co se reálně prodalo".
+  // Dokud je `konec === null`, nic se nenačetlo a likvidita se nezobrazuje.
+  const historieRef = useRef<SkladHistorie>(null as unknown as SkladHistorie);
+  if (historieRef.current === null) {
+    historieRef.current = new SkladHistorie();
+    const u = nactiUlozenouHistorii("west");
+    historieRef.current.obnov(u.souhrny, u.konecOkna);
+  }
+
   // Ochrana proti vadě 1: každý sken má pořadové číslo. Když uživatel
   // přepne město uprostřed, starší odpověď se zahodí a nepřepíše novější.
   const poradiRef = useRef(0);
@@ -129,7 +149,7 @@ export function App() {
     prerusRef.current = rizeni;
 
     const poradi = ++poradiRef.current;
-    setStav({ druh: "bezi", hotovo: 0, celkem: 1 });
+    setStav({ druh: "bezi", hotovo: 0, celkem: 1, faze: "ceny" });
 
     try {
       const ids = potrebnaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
@@ -138,13 +158,22 @@ export function App() {
       // (ověřeno: 205 ID × 7 měst = 1 435 cen v jednom dotazu, 0,33 s).
       // Převoz i příležitosti potřebují všechna města — u převozu proto,
       // že se porovnávají cílová města mezi sebou.
-      const mesta = rezimRef.current === "mesto"
-        ? [nastaveniRef.current.mesto]
-        : MESTA.map((m) => m.nazev);
+      // Black Market se přidává jen u výbavy — suroviny neobchoduje
+      // (ověřeno: T5 Planks i T5 Metal Bar tam mají nulový týdenní objem),
+      // takže u refiningu by to byla jen osmina přenosu navíc pro nic.
+      const bmVHre = lzeProdatNaBM("Caerleon", nastaveniRef.current.skupina);
+      const mesta = [
+        ...(rezimRef.current === "mesto"
+          ? [nastaveniRef.current.mesto]
+          : MESTA.map((m) => m.nazev)),
+        ...(bmVHre ? [BLACK_MARKET] : []),
+      ];
 
       const radky = await nactiCeny(
         serverRef.current, ids, mesta, [1], rizeni.signal,
-        (p) => { if (poradi === poradiRef.current) setStav({ druh: "bezi", ...p }); },
+        (p) => {
+          if (poradi === poradiRef.current) setStav({ druh: "bezi", ...p, faze: "ceny" });
+        },
       );
 
       // Mezitím mohl začít novější sken — tenhle výsledek už neplatí.
@@ -152,7 +181,42 @@ export function App() {
 
       const { ulozeno, zachovanoRucnich } = skladRef.current.naplnZAodp(radky, rozlozId);
       setVerzeCen((v) => v + 1);
-      setStav({ druh: "hotovo", ulozeno, zachovanoRucnich, kdy: new Date() });
+
+      // ── Historie skutečných obchodů ────────────────────────────────
+      //
+      // Až PO cenách a ve vlastním try. Historie je doplněk: když selže,
+      // sken zůstává platný a jen se nezobrazí likvidita. Kdyby byla ve
+      // společném try, výpadek doplňku by shodil hlavní výsledek.
+      //
+      // Tahá se jen pro skenované položky, ne pro jejich vstupy —
+      // likvidita je vlastnost toho, co prodáváš.
+      let historieChyba: string | undefined;
+      try {
+        const idsHistorie = skenovanaIds(
+          nastaveniRef.current.skupina, nastaveniRef.current.kategorie,
+        );
+        setStav({ druh: "bezi", hotovo: 0, celkem: 1, faze: "historie" });
+
+        const serie = await nactiHistoriiDavkove(
+          serverRef.current, idsHistorie, mesta, rizeni.signal,
+          (p) => {
+            if (poradi === poradiRef.current) setStav({ druh: "bezi", ...p, faze: "historie" });
+          },
+        );
+        if (poradi !== poradiRef.current) return;
+
+        historieRef.current.naplnZAodp(serie, rozlozId);
+        ulozHistorii(
+          serverRef.current, historieRef.current.export(), historieRef.current.konec,
+        );
+        setVerzeCen((v) => v + 1);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        if (poradi !== poradiRef.current) return;
+        historieChyba = e instanceof Error ? e.message : String(e);
+      }
+
+      setStav({ druh: "hotovo", ulozeno, zachovanoRucnich, kdy: new Date(), historieChyba });
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       if (poradi !== poradiRef.current) return;
@@ -163,6 +227,7 @@ export function App() {
   const radky: RadekSkenu[] = useMemo(
     () => spocitatSken(
       nastaveni, skladRef.current, lokace(nastaveni.mesto), HRA.konstanty, nazevPolozky,
+      historieRef.current,
     ),
     // verzeCen je záměrně v závislostech — sklad je proměnlivý objekt,
     // React by změnu uvnitř něj sám nezaznamenal.
@@ -180,7 +245,10 @@ export function App() {
   // je to 7× víc práce než sken jednoho města.
   const prilezitosti = useMemo(
     () => rezim === "prilezitosti"
-      ? spocitatNapricMesty(nastaveni, skladRef.current, HRA.konstanty, nazevPolozky, metrika)
+      ? spocitatNapricMesty(
+          nastaveni, skladRef.current, HRA.konstanty, nazevPolozky, metrika,
+          historieRef.current,
+        )
       : [],
     [rezim, nastaveni, verzeCen, metrika],
   );
@@ -234,6 +302,15 @@ export function App() {
     const ulozeno = nacti(server);
     novy.obnov(ulozeno.ceny);
     skladRef.current = novy;
+
+    // Historie je stejně vázaná na server jako ceny — obchody z `west`
+    // nevypovídají o ničem na `europe`. Musí se vyměnit spolu s cenami,
+    // jinak by likvidita patřila k jiné ekonomice než čísla vedle ní.
+    const novaHistorie = new SkladHistorie();
+    const ulozenaHistorie = nactiUlozenouHistorii(server);
+    novaHistorie.obnov(ulozenaHistorie.souhrny, ulozenaHistorie.konecOkna);
+    historieRef.current = novaHistorie;
+
     if (ulozeno.nastaveni) setNastaveni((n) => ({ ...n, ...ulozeno.nastaveni }));
     setVerzeCen((v) => v + 1);
     setStav({ druh: "necinny" });
@@ -284,6 +361,7 @@ export function App() {
           metrika={metrika} setMetrika={setMetrika}
           maxStari={maxStari} setMaxStari={setMaxStari}
           jenZiskove={jenZiskove} setJenZiskove={setJenZiskove}
+          rezim={rezim}
           stav={stav} spustitSken={spustitSken}
           // Sken vší výbavy trvá ~46 s — bez možnosti zrušit by uživatel
           // musel čekat na něco, co si rozmyslel.
@@ -291,6 +369,11 @@ export function App() {
           zapomenoutCeny={() => {
             zapomen(server);
             skladRef.current = new SkladCen();
+            // Historie jde pryč taky. Likvidita bez cen sice dává smysl,
+            // ale „zahodit ceny" je pro uživatele reset — nechat po něm
+            // půlku dat by bylo překvapení, ne pohodlí.
+            zapomenHistorii(server);
+            historieRef.current = new SkladHistorie();
             setVerzeCen((v) => v + 1);
             setStav({ druh: "necinny" });
           }}
@@ -322,12 +405,14 @@ export function App() {
             )}
             <TabulkaPrilezitosti
               prilezitosti={filtrovanePrilezitosti} metrika={metrika}
+              davka={nastaveni.pocetVyrobku}
               otevritDetail={(p) => setDetailKlic(p.klic)}
             />
           </div>
         ) : (
           <TabulkaSkenu
             radky={filtrovane} metrika={metrika} celkem={s.celkem}
+            davka={nastaveni.pocetVyrobku}
             otevritDetail={(r) => setDetailKlic(`${r.polozka.zaklad}#${r.enchant}`)}
           />
         )}
@@ -340,8 +425,12 @@ export function App() {
         <DetailPolozky
           radek={detailPrilezitost.nejlepsi.radek}
           zobrazeneMesto={detailPrilezitost.nejlepsi.mesto}
+          zobrazeneMisto={detailPrilezitost.nejlepsi.nazevMista}
+          // Black Market jen vykupuje — nakupovat se na něm nedá, proto
+          // se předává zvlášť jako místo prodeje, ne jako město.
+          mistoProdeje={detailPrilezitost.nejlepsi.naBlackMarketu ? BLACK_MARKET : undefined}
           srovnaniMest={detailPrilezitost.vsechnaMesta.map((v) => ({
-            mesto: v.mesto, radek: v.radek,
+            mesto: v.mesto, nazevMista: v.nazevMista, radek: v.radek,
           }))}
           server={server}
           lokace={lokace(detailPrilezitost?.nejlepsi.mesto ?? nastaveni.mesto)}
@@ -358,6 +447,11 @@ export function App() {
         <DetailPolozky
           radek={detail}
           server={server}
+          mistoProdeje={
+            nastaveni.prodejNaBlackMarketu
+            && lzeProdatNaBM(nastaveni.mesto, nastaveni.skupina)
+              ? BLACK_MARKET : undefined
+          }
           lokace={lokace(nastaveni.mesto)}
           nastaveni={nastaveni}
           sklad={skladRef.current}

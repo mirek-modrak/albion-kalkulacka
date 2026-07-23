@@ -2,10 +2,13 @@ import { hodnotaMetriky, type Metrika } from "../stav/sken";
 import { naskokNadDruhym, type Prilezitost } from "../stav/napricMesty";
 import { MESTA } from "../data/hra";
 import { barvaStari, cislo, procenta, stari } from "./format";
+import { OdznakLikvidity, ZnackaFantomu } from "./OdznakLikvidity";
 
 interface Props {
   prilezitosti: Prilezitost[];
   metrika: Metrika;
+  /** Dávka uživatele — proti ní se poměřuje, jestli je trh dost hluboký. */
+  davka: number;
   otevritDetail: (p: Prilezitost) => void;
 }
 
@@ -35,9 +38,10 @@ function Naskok({ p, metrika }: { p: Prilezitost; metrika: Metrika }) {
   );
 }
 
-/** V kolika městech se to podařilo spočítat. Málo měst = slabší jistota. */
+/** V kolika místech se to podařilo spočítat. Málo míst = slabší jistota. */
 function Pokryti({ p }: { p: Prilezitost }) {
-  const celkem = MESTA.length;
+  // Není to konstanta — u výbavy přibývá Black Market jako osmé místo.
+  const celkem = p.pocetMist;
   const styl = p.spocitanoMest === celkem
     ? "text-slate-400"
     : p.spocitanoMest >= 3
@@ -53,7 +57,7 @@ function Pokryti({ p }: { p: Prilezitost }) {
   );
 }
 
-export function TabulkaPrilezitosti({ prilezitosti, metrika, otevritDetail }: Props) {
+export function TabulkaPrilezitosti({ prilezitosti, metrika, davka, otevritDetail }: Props) {
   if (prilezitosti.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 p-8 text-center dark:border-slate-800">
@@ -76,6 +80,10 @@ export function TabulkaPrilezitosti({ prilezitosti, metrika, otevritDetail }: Pr
             <th className="px-2 py-2 text-right font-medium">Náskok</th>
             <th className="px-3 py-2 text-right font-medium">Zisk celkem</th>
             <th className="hidden px-2 py-2 text-right font-medium xl:table-cell">Návratnost</th>
+            <th className="px-2 py-2 text-right font-medium"
+                title="Kolik kusů se ve vítězném městě za týden reálně prodalo">
+              Likvidita
+            </th>
             <th className="px-2 py-2 text-right font-medium">Města</th>
             <th className="px-2 py-2 text-right font-medium">Stáří</th>
             <th className="px-2 py-2 text-left font-medium">Stav</th>
@@ -92,7 +100,15 @@ export function TabulkaPrilezitosti({ prilezitosti, metrika, otevritDetail }: Pr
                              dark:border-slate-800/60 dark:hover:bg-slate-800/40">
                 <td className="px-3 py-1.5 whitespace-nowrap">{p.nazev}</td>
                 <td className="px-3 py-1.5 whitespace-nowrap">
-                  {v ? p.nejlepsi.mesto : <span className="text-slate-400">—</span>}
+                  {v ? (
+                    <span className={p.nejlepsi.naBlackMarketu
+                      ? "font-semibold text-amber-700 dark:text-amber-400" : ""}
+                          title={p.nejlepsi.naBlackMarketu
+                            ? "Vyrobit v Caerleonu, prodat na Black Market"
+                            : undefined}>
+                      {p.nejlepsi.nazevMista}
+                    </span>
+                  ) : <span className="text-slate-400">—</span>}
                 </td>
                 <td className="px-3 py-1.5 text-right">
                   <HodnotaMetriky p={p} metrika={metrika} />
@@ -101,6 +117,11 @@ export function TabulkaPrilezitosti({ prilezitosti, metrika, otevritDetail }: Pr
                 <td className="px-3 py-1.5 text-right">{v ? cislo(v.zisk) : "—"}</td>
                 <td className="hidden px-2 py-1.5 text-right text-slate-500 xl:table-cell">
                   {v ? procenta(v.bonus.returnRate) : "—"}
+                </td>
+                {/* Likvidita VÍTĚZNÉHO města. Bez ní by šlo vyhrát na mrtvém
+                    trhu — a právě tam bývají nejvyšší marže. */}
+                <td className="px-2 py-1.5 text-right">
+                  <OdznakLikvidity likvidita={p.nejlepsi.radek.likvidita} davka={davka} />
                 </td>
                 <td className="px-2 py-1.5 text-right"><Pokryti p={p} /></td>
                 <td className="px-3 py-1.5 text-right">
@@ -112,10 +133,11 @@ export function TabulkaPrilezitosti({ prilezitosti, metrika, otevritDetail }: Pr
                     <span className="text-xs text-slate-400">—</span>
                   )}
                 </td>
-                <td className="px-2 py-1.5">
+                <td className="px-2 py-1.5 space-x-1">
                   {/* Bez tohohle by marži 688 % vedla tabulku bez varování —
                       a skener, který nahoře ukáže falešné zlaté doly,
                       ztratí důvěru v celek. */}
+                  <ZnackaFantomu likvidita={p.nejlepsi.radek.likvidita} />
                   {p.nejlepsi.radek.stav === "podezrele" && (
                     <span className="text-xs text-amber-600 dark:text-amber-400"
                           title="Marže nad 300 % bývá chyba v datech nebo tenký orderbook, ne příležitost">

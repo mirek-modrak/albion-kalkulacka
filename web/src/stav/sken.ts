@@ -13,9 +13,10 @@ import {
   type Cena, type Enchant, type HerniPolozka, type Konstanty,
   type Lokace, type TypCeny, type VysledekVypoctu, type Vstup,
 } from "@albion/jadro";
-import { refinedKombinace, vybavaKombinace, vaha, type Kombinace } from "../data/hra";
+import { BLACK_MARKET, refinedKombinace, vybavaKombinace, vaha, type Kombinace } from "../data/hra";
 import { SUROVINY_ID, kategorieSkupiny } from "../data/kategorie";
 import type { SkladCen } from "./skladCen";
+import { vyhodnotLikviditu, type Likvidita, type SkladHistorie } from "./skladHistorie";
 
 export type RezimCeny = "instant" | "order";
 
@@ -32,7 +33,33 @@ export interface NastaveniSkenu {
   skupina: string;
   /** Zúžení na konkrétní kategorie ve skupině. Prázdné = celá skupina. */
   kategorie: string[];
+  /**
+   * Prodávat výsledek na Black Marketu místo na tržnici v `mesto`.
+   *
+   * Dává smysl **jen když `mesto` je Caerleon** — Black Market tam fyzicky
+   * je a jinam se z něj nedá prodávat bez cesty. Vynucuje to `lzeProdatNaBM`
+   * a ovládací panel, protože jinak by výpočet mlčky předpokládal teleport.
+   *
+   * Mění dvě věci: odkud se bere prodejní cena, a setup fee (1,5 % místo
+   * 2,5 %). Bonusy výroby zůstávají Caerleonu — na Black Marketu se nevyrábí.
+   */
+  prodejNaBlackMarketu: boolean;
 }
+
+/**
+ * Lze v téhle konfiguraci prodávat na Black Market?
+ *
+ * Dvě podmínky. Caerleon proto, že jinde BM není. Výbava proto, že
+ * suroviny BM neobchoduje — ověřeno: T5 Planks i T5 Metal Bar mají na BM
+ * v týdenním okně nulový objem, zatímco na běžných tržnicích statisíce.
+ * Bez druhé podmínky by refining sken dostal 115 prázdných řádků navíc.
+ */
+export function lzeProdatNaBM(mesto: string, skupina: string): boolean {
+  return mesto === BLACK_MARKET_MESTO && skupina !== SUROVINY_ID;
+}
+
+/** Město, ve kterém Black Market fyzicky je. */
+const BLACK_MARKET_MESTO = "Caerleon";
 
 export type StavRadku = "ok" | "chybi-cena" | "podezrele";
 
@@ -46,6 +73,15 @@ export interface RadekSkenu {
   chybejici: string[];
   /** Stáří nejstarší použité ceny v hodinách. Null u ručně zadaných. */
   stariHodin: number | null;
+  /**
+   * Skutečné obchody za posledních 30 dní.
+   *
+   * **Null znamená „historie se netáhla", NE „nic se neobchoduje".**
+   * Ten rozdíl je zásadní: order book umí říct jen za kolik někdo nabízí,
+   * ne jestli za to někdo koupí. Naměřeno, že T6 Main Sword má v Caerleonu
+   * nabídku 89 999 a za 30 dní tam neproběhl jediný obchod.
+   */
+  likvidita: Likvidita | null;
 }
 
 /** Metriky řazení. Absolutní zisk je záměrně až dole — viz komentář níž. */
@@ -74,6 +110,23 @@ export function typProNakup(rezim: RezimCeny): TypCeny {
 }
 export function typProProdej(rezim: RezimCeny): TypCeny {
   return rezim === "instant" ? "buy_max" : "sell_min";
+}
+
+/**
+ * Který sloupec se použije pro prodej **na daném místě**.
+ *
+ * Na Black Marketu volba „přes sell order" neexistuje. BM není tržnice,
+ * kde na sebe čekají hráči — je to výkup: systém vypíše cenu a za tu to
+ * od tebe koupí. `buy_max` je proto konečná cena, ne jedna z variant.
+ *
+ * Bez tohohle rozlišení brala aplikace na BM `sell_min`, tedy cizí čekající
+ * nabídku. Naměřeno 2026-07-23 na T4 Adept's Enigmatic Staff: medián
+ * skutečných obchodů 11 078, rozsah za 30 dní 9 808–11 164, ale sken
+ * počítal s ~30 000 (+171 %). Ta položka pak sedí vysoko v tabulce na ceně,
+ * kterou nikdo nezaplatí — přesně ta vada, kvůli které tahle vrstva vznikla.
+ */
+export function typProdejeProMisto(rezim: RezimCeny, naBlackMarketu: boolean): TypCeny {
+  return naBlackMarketu ? "buy_max" : typProProdej(rezim);
 }
 
 /**
@@ -117,6 +170,25 @@ export function potrebnaIds(skupina: string, kategorie?: string[]): string[] {
   return [...ids];
 }
 
+/**
+ * AODP ID jen SKENOVANÝCH položek, bez jejich vstupů.
+ *
+ * Pro historii stačí tohle. Likvidita odpovídá na otázku „koupí ode mě
+ * někdo ten výrobek?", a to je vlastnost výstupu, ne surovin. U výbavy
+ * je to polovina přenosu — historie je řádově megabajty, na rozdíl
+ * od cen.
+ *
+ * Důsledek, se kterým je třeba počítat: likvidita NÁKUPNÍ strany se
+ * nezobrazuje. Že se surovina špatně shání, aplikace neukáže.
+ */
+export function skenovanaIds(skupina: string, kategorie?: string[]): string[] {
+  const ids = new Set<string>();
+  for (const { polozka, enchant } of kombinaceProSken(skupina, kategorie)) {
+    ids.add(aodpId({ zaklad: polozka.zaklad, enchant: enchant as Enchant }, polozka.druh));
+  }
+  return [...ids];
+}
+
 /** Převede AODP ID zpět na základ a enchant. */
 export function rozlozId(id: string): { zaklad: string; enchant: number } {
   return zAodpId(id);
@@ -124,23 +196,45 @@ export function rozlozId(id: string): { zaklad: string; enchant: number } {
 
 const vahaVstupu = (v: Vstup) => vaha(v.zaklad);
 
-/** Spočítá všechny kombinace nad tím, co je právě ve skladu cen. */
+/**
+ * Spočítá všechny kombinace nad tím, co je právě ve skladu cen.
+ *
+ * @param historie  sklad skutečných obchodů. Nepovinný — bez něj se sken
+ *   počítá stejně jako dřív, jen řádky nemají likviditu. Když je předaný,
+ *   ale ještě nikdy nic nenačetl (`konec === null`), likvidita zůstane
+ *   null také: tvrdit „žádné obchody" o něčem, na co jsme se neptali,
+ *   by bylo prostě nepravdivé.
+ */
 export function spocitatSken(
   nastaveni: NastaveniSkenu,
   sklad: SkladCen,
   lokace: Lokace | undefined,
   konstanty: Konstanty,
   nazevPolozky: (zaklad: string, enchant: number) => string,
+  historie?: SkladHistorie,
 ): RadekSkenu[] {
+  // Jedna kontrola pro celý sken, ne pro každý řádek zvlášť.
+  const maHistorii = historie !== undefined && historie.konec !== null;
+
+  // Kde se PRODÁVÁ. Liší se od `mesto` jen u Black Marketu — nakupuje se
+  // a vyrábí pořád v `mesto`, protože na BM nejsou ani suroviny, ani stanice.
+  const naBM = nastaveni.prodejNaBlackMarketu && lzeProdatNaBM(nastaveni.mesto, nastaveni.skupina);
+  const mistoProdeje = naBM ? BLACK_MARKET : nastaveni.mesto;
+  const typProdej = typProdejeProMisto(nastaveni.rezimProdeje, naBM);
+
+  // Na Black Marketu se neklade order, prodává se rovnou do výkupu —
+  // proto se neplatí setup fee. Daň z prodeje platí dál.
+  const rezimProdeje = naBM ? "instant" : nastaveni.rezimProdeje;
   const radky: RadekSkenu[] = [];
   const typNakup = typProNakup(nastaveni.rezimNakupu);
-  const typProdej = typProProdej(nastaveni.rezimProdeje);
 
   for (const { polozka, enchant } of kombinaceProSken(nastaveni.skupina, nastaveni.kategorie)) {
     const e = enchant as Enchant;
     const varianta = polozka.varianty.find((v) => v.enchant === e && !v.sFactionTokenem);
 
-    const zaklad: Omit<RadekSkenu, "stav" | "vysledek" | "chybejici" | "stariHodin"> = {
+    const zaklad: Omit<
+      RadekSkenu, "stav" | "vysledek" | "chybejici" | "stariHodin" | "likvidita"
+    > = {
       polozka, enchant: e, nazev: nazevPolozky(polozka.zaklad, e),
     };
 
@@ -161,17 +255,31 @@ export function spocitatSken(
       }
     }
 
-    // Cena výstupu
-    const cenaVystupu = sklad.ziskej(nastaveni.mesto, polozka.zaklad, e, typProdej);
+    // Cena výstupu — z místa PRODEJE, ne z města výroby.
+    const cenaVystupu = sklad.ziskej(mistoProdeje, polozka.zaklad, e, typProdej);
     pouzite.push(cenaVystupu);
     if (!cenaVystupu || !(cenaVystupu.hodnota > 0)) {
       chybejici.push(nazevPolozky(polozka.zaklad, e));
     }
 
+    // Likvidita se počítá i pro řádky bez ceny. Právě tam je nejcennější:
+    // „cenu neznáme, ale za týden se toho prodalo 1 700 kusů" je užitečná
+    // informace, kdežto prázdný řádek neříká nic.
+    // Taky z místa prodeje — likvidita je otázka „koupí to ode mě někdo
+    // TAM, kde to prodávám". U výbavy je to celý rozdíl mezi caerleonskou
+    // tržnicí (nula obchodů) a Black Marketem (stovky kusů denně).
+    const likvidita: Likvidita | null = maHistorii
+      ? vyhodnotLikviditu(
+          historie!.ziskej(mistoProdeje, polozka.zaklad, e),
+          nastaveni.pocetVyrobku,
+          cenaVystupu?.hodnota ?? null,
+        )
+      : null;
+
     if (chybejici.length > 0 || !cenaVystupu) {
       radky.push({
         ...zaklad, stav: "chybi-cena", vysledek: null, chybejici,
-        stariHodin: sklad.nejstarsiStari(pouzite),
+        stariHodin: sklad.nejstarsiStari(pouzite), likvidita,
       });
       continue;
     }
@@ -190,14 +298,18 @@ export function spocitatSken(
       premium: nastaveni.premium,
       sazbaStanice: nastaveni.sazbaStanice,
       rezimNakupu: nastaveni.rezimNakupu,
-      rezimProdeje: nastaveni.rezimProdeje,
+      rezimProdeje,
+      // Zůstává pravdivé, i když se při prodeji do výkupu setup fee neplatí
+      // vůbec. Nižší sazba 1,5 % by se uplatnila jen u sell orderu na BM,
+      // což podle herních pravidel není, jak Black Market funguje.
+      prodejNaBlackMarketu: naBM,
     }, konstanty, vahaVstupu);
 
     if (!v.ok) {
       radky.push({
         ...zaklad, stav: "chybi-cena", vysledek: null,
         chybejici: v.chyba.druh === "chybi-cena" ? [v.chyba.zaklad] : ["neznámá varianta"],
-        stariHodin: sklad.nejstarsiStari(pouzite),
+        stariHodin: sklad.nejstarsiStari(pouzite), likvidita,
       });
       continue;
     }
@@ -208,6 +320,7 @@ export function spocitatSken(
       vysledek: v.hodnota,
       chybejici: [],
       stariHodin: sklad.nejstarsiStari(pouzite),
+      likvidita,
     });
   }
 

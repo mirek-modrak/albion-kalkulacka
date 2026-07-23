@@ -1,10 +1,13 @@
 import { hodnotaMetriky, type Metrika, type RadekSkenu } from "../stav/sken";
 import { barvaStari, cislo, procenta, stari } from "./format";
+import { OdznakLikvidity, ZnackaFantomu } from "./OdznakLikvidity";
 
 interface Props {
   radky: RadekSkenu[];
   metrika: Metrika;
   celkem: number;
+  /** Dávka uživatele — proti ní se poměřuje, jestli je trh dost hluboký. */
+  davka: number;
   otevritDetail: (radek: RadekSkenu) => void;
 }
 
@@ -28,7 +31,7 @@ function HodnotaMetriky({ radek, metrika }: { radek: RadekSkenu; metrika: Metrik
   return <span className={`font-semibold ${styl}`}>{text}</span>;
 }
 
-export function TabulkaSkenu({ radky, metrika, celkem, otevritDetail }: Props) {
+export function TabulkaSkenu({ radky, metrika, celkem, davka, otevritDetail }: Props) {
   if (celkem === 0) {
     return (
       <div className="rounded-xl border border-slate-200 p-8 text-center text-slate-500
@@ -60,6 +63,10 @@ export function TabulkaSkenu({ radky, metrika, celkem, otevritDetail }: Props) {
             <th className="px-3 py-2 text-right font-medium">Marže</th>
             <th className="px-3 py-2 text-right font-medium">Zisk / kg</th>
             <th className="px-3 py-2 text-right font-medium">Návratnost</th>
+            <th className="px-3 py-2 text-right font-medium"
+                title="Kolik kusů se za týden reálně prodalo. Marže bez kupce je jen číslo.">
+              Likvidita
+            </th>
             <th className="px-3 py-2 text-right font-medium">Stáří</th>
             <th className="px-3 py-2 text-left font-medium">Stav</th>
           </tr>
@@ -88,9 +95,13 @@ export function TabulkaSkenu({ radky, metrika, celkem, otevritDetail }: Props) {
                 {r.vysledek ? procenta(r.vysledek.bonus.returnRate) : "—"}
               </td>
               <td className="px-3 py-1.5 text-right">
+                <OdznakLikvidity likvidita={r.likvidita} davka={davka} />
+              </td>
+              <td className="px-3 py-1.5 text-right">
                 <OdznakStari hodin={r.stariHodin} maCenu={r.vysledek !== null} />
               </td>
-              <td className="px-3 py-1.5">
+              <td className="px-3 py-1.5 space-x-1">
+                <ZnackaFantomu likvidita={r.likvidita} />
                 {r.stav === "podezrele" && (
                   <span className="text-xs text-amber-600 dark:text-amber-400"
                         title="Marže nad 300 % bývá chyba v datech nebo tenký orderbook, ne příležitost">

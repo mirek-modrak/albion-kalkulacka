@@ -3,11 +3,13 @@ import type { TypCeny } from "@albion/jadro";
 import type { Server } from "../data/aodp";
 import type { Lokace } from "@albion/jadro";
 import type { RadekSkenu, NastaveniSkenu } from "../stav/sken";
-import { typProNakup, typProProdej } from "../stav/sken";
+import { typProNakup, typProdejeProMisto } from "../stav/sken";
 import type { SkladCen } from "../stav/skladCen";
 import { barvaHodnoty, barvaStari, cislo, procenta, seZnamenkem, stari } from "./format";
 import { SekceHistorie } from "./SekceHistorie";
 import { SekceRetezec } from "./SekceRetezec";
+import { OdchylkaOdMedianu } from "./OdznakLikvidity";
+import { stariDnu } from "../stav/skladHistorie";
 
 interface Props {
   radek: RadekSkenu;
@@ -17,8 +19,15 @@ interface Props {
   poZmeneCeny: () => void;
   zavrit: () => void;
   nazevPolozky: (zaklad: string, enchant: number) => string;
-  /** Srovnání měst — jen v režimu příležitostí. */
-  srovnaniMest?: { mesto: string; radek: RadekSkenu }[];
+  /** Srovnání míst — jen v režimu příležitostí. */
+  srovnaniMest?: { mesto: string; nazevMista: string; radek: RadekSkenu }[];
+  /** Které místo je právě rozepsané — „Martlock" nebo „Caerleon → BM". */
+  zobrazeneMisto?: string;
+  /**
+   * Kde se PRODÁVÁ, když se to liší od města výroby (Black Market).
+   * Vstupy se pořád kupují v `zobrazeneMesto` — na BM se nenakupuje.
+   */
+  mistoProdeje?: string;
   /** Server — historie se tahá pro něj. */
   server: Server;
   /** Lokace zobrazovaného města — pro bonusy v řetězu. */
@@ -45,12 +54,21 @@ export function DetailPolozky(p: Props) {
   const { radek, nastaveni, sklad } = p;
   const v = radek.vysledek;
   const typNakup = typProNakup(nastaveni.rezimNakupu);
-  const typProdej = typProProdej(nastaveni.rezimProdeje);
+  // Na Black Marketu je `buy_max` konečná cena výkupu, ne jedna z voleb —
+  // proto se typ počítá z místa prodeje, ne jen z nastavení.
+  const typProdej = typProdejeProMisto(nastaveni.rezimProdeje, p.mistoProdeje !== undefined);
 
   // V režimu příležitostí je zobrazované město to nejlepší, ne to nastavené.
   // Ceny se musí vztahovat k němu, jinak by detail ukazoval ceny odjinud,
   // než ze kterých je spočítaný rozpad.
   const mesto = p.zobrazeneMesto ?? nastaveni.mesto;
+
+  // Black Market je tržnice v Caerleonu, ale funguje JEDNOSMĚRNĚ — systém
+  // věci jen vykupuje, hráči si z něj nic nekoupí. Proto se rozchází místo
+  // nákupu (vždy město) a místo prodeje. Nakupovat na BM nesmí nikde nic:
+  // vstupy, řetěz „koupit vs. vyrobit" i bonusy zůstávají na `mesto`.
+  const mistoProdeje = p.mistoProdeje ?? mesto;
+  const prodejJinde = mistoProdeje !== mesto;
 
   const varianta = radek.polozka.varianty.find(
     (x) => x.enchant === radek.enchant && !x.sFactionTokenem,
@@ -83,19 +101,21 @@ export function DetailPolozky(p: Props) {
         </div>
 
         {p.srovnaniMest && p.srovnaniMest.length > 0 && (
-          <Sekce nadpis="Srovnání měst">
+          <Sekce nadpis="Srovnání míst">
             <p className="mb-2 text-xs text-slate-500">
-              Nákup, výroba i prodej ve stejném městě — žádné skryté náklady na cestu.
+              Nákup i výroba vždy ve stejném městě — žádné skryté náklady na cestu.
+              U <b>→ BM</b> se výsledek prodává na Black Market, který je v Caerleonu
+              taky, takže se ani tam nikam necestuje.
             </p>
-            {p.srovnaniMest.map(({ mesto: m, radek: r }) => {
+            {p.srovnaniMest.map(({ mesto: m, radek: r, nazevMista }) => {
               const zisk = r.vysledek?.zisk;
-              const zobrazene = mesto === m;
+              const zobrazene = nazevMista === p.zobrazeneMisto;
               return (
-                <div key={m}
+                <div key={nazevMista}
                      className={`flex items-baseline justify-between gap-3 border-b
                                  border-slate-100 py-1 text-sm dark:border-slate-800/60
                                  ${zobrazene ? "font-semibold" : ""}`}>
-                  <span>{m}{zobrazene && " ←"}</span>
+                  <span>{nazevMista}{zobrazene && " ←"}</span>
                   <span className="flex gap-3 whitespace-nowrap">
                     {r.vysledek ? (
                       <>
@@ -115,11 +135,21 @@ export function DetailPolozky(p: Props) {
         )}
 
         {/* Ceny — hlavní důvod, proč detail existuje i u řádků bez výsledku */}
-        <Sekce nadpis={`Ceny — ${mesto}`}>
+        <Sekce nadpis={prodejJinde ? `Ceny — ${mesto} → ${mistoProdeje}` : `Ceny — ${mesto}`}>
           <p className="mb-2 text-xs text-slate-500">
             Ruční hodnota má přednost a <b>nový sken ji nepřepíše</b>.
             Změna se promítne do všech řádků, které tuhle položku používají.
           </p>
+          {prodejJinde && (
+            <p className="mb-2 rounded bg-amber-50 p-2 text-xs text-amber-800
+                          dark:bg-amber-950/30 dark:text-amber-300">
+              Suroviny se kupují v <b>{mesto}</b>, výsledek se prodává na{" "}
+              <b>{mistoProdeje}</b>. Black Market věci jen vykupuje — nakoupit
+              se na něm nedá, proto vstupy zůstávají ve městě. Cena je{" "}
+              <b>konečná částka, kterou systém vyplácí</b>, takže se neklade
+              order ani neplatí setup fee. Daň z prodeje platí dál.
+            </p>
+          )}
 
           {varianta?.vstupy.map((vstup) => (
             <RadekCeny
@@ -131,11 +161,15 @@ export function DetailPolozky(p: Props) {
           ))}
 
           <RadekCeny
-            popis={`Prodej — ${radek.nazev}`}
-            mesto={mesto} zaklad={radek.polozka.zaklad} enchant={radek.enchant}
+            popis={`Prodej — ${radek.nazev}${prodejJinde ? ` (${mistoProdeje})` : ""}`}
+            mesto={mistoProdeje} zaklad={radek.polozka.zaklad} enchant={radek.enchant}
             typ={typProdej} sklad={sklad} poZmene={p.poZmeneCeny}
           />
         </Sekce>
+
+        {/* Skutečné obchody — protiváha k order booku výš.
+            Order book říká za kolik někdo NABÍZÍ, tohle co se PRODALO. */}
+        <SekceObchodu radek={radek} davka={nastaveni.pocetVyrobku} />
 
         {/* Koupit vs. vyrobit — jen u položek, které jdou vyrobit. */}
         {radek.polozka.varianty.length > 0 && (
@@ -152,12 +186,15 @@ export function DetailPolozky(p: Props) {
         {/* Historie je MIMO větev „má výsledek".
             Když chybí aktuální cena, je to jediné, co o položce víme —
             a právě tam je nejužitečnější. */}
-        <Sekce nadpis="Vývoj za 30 dní">
+        {/* Graf se vztahuje k místu PRODEJE — u Black Marketu je běžná
+            caerleonská tržnice úplně jiná řada než ta, na které vyděláš. */}
+        <Sekce nadpis={`Vývoj za 30 dní — ${mistoProdeje}`}>
           <SekceHistorie
             polozka={radek.polozka} enchant={radek.enchant}
-            mesto={mesto} server={p.server}
-            aktualniCena={sklad.ziskej(mesto, radek.polozka.zaklad, radek.enchant, typProdej)
-              ?.hodnota ?? null}
+            mesto={mistoProdeje} server={p.server}
+            aktualniCena={sklad.ziskej(
+              mistoProdeje, radek.polozka.zaklad, radek.enchant, typProdej,
+            )?.hodnota ?? null}
           />
         </Sekce>
 
@@ -259,6 +296,105 @@ export function DetailPolozky(p: Props) {
 }
 
 // ── Dílčí prvky ─────────────────────────────────────────────
+
+/**
+ * Skutečné obchody za posledních 30 dní.
+ *
+ * Existuje proto, že order book neumí odpovědět na otázku „koupí to ode mě
+ * někdo?". Naměřeno 2026-07-23: T6 Main Sword má v Caerleonu nabídku 89 999
+ * a za 30 dní tam neproběhl jediný obchod — a opačně, T5 Cape má na Black
+ * Marketu buy_max 4 108 proti mediánu skutečných obchodů 8 753.
+ */
+function SekceObchodu({ radek, davka }: { radek: RadekSkenu; davka: number }) {
+  const l = radek.likvidita;
+
+  if (!l) {
+    return (
+      <Sekce nadpis="Skutečné obchody">
+        <p className="text-xs text-slate-500">
+          Historie se ještě nestahovala. Spusť sken — přijde spolu s cenami.
+        </p>
+      </Sekce>
+    );
+  }
+
+  const s = l.souhrn;
+  const stariPosledniho = stariDnu(s.posledniDen);
+
+  if (l.stav === "bez-dat") {
+    return (
+      <Sekce nadpis="Skutečné obchody">
+        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800
+                      dark:bg-red-950/40 dark:text-red-300">
+          <b>Za 30 dní tu AODP nezaznamenalo jediný obchod.</b> Cena z order booku
+          nemusí znamenat, že za ni někdo koupí — může to být nabídka, na kterou
+          nikdo nereaguje.
+          <br />
+          <span className="text-xs opacity-80">
+            Pozor: AODP je crowdsourcované. Nula může znamenat i to, že tohle
+            město prostě nikdo neskenoval.
+          </span>
+        </p>
+      </Sekce>
+    );
+  }
+
+  return (
+    <Sekce nadpis="Skutečné obchody">
+      <Radek popis="Medián ceny za poslední týden"
+             hodnota={s.medianTyden !== null
+               ? <b>{cislo(s.medianTyden)}</b>
+               : <span className="text-slate-400">—</span>} />
+      <Radek popis="Odchylka počítané ceny od mediánu"
+             hodnota={<OdchylkaOdMedianu likvidita={l} />} />
+      <Radek popis="Rozsah skutečných cen za 30 dní"
+             hodnota={s.minOkno !== null
+               ? <>{cislo(s.minOkno)} – {cislo(s.maxOkno ?? 0)}</>
+               : <span className="text-slate-400">—</span>} />
+      <Radek popis="Prodáno za týden"
+             hodnota={s.objemTyden !== null
+               ? <b className={l.stav === "tenky" ? "text-amber-600 dark:text-amber-400" : ""}>
+                   {cislo(s.objemTyden)} ks
+                 </b>
+               : <span className="text-slate-400">bez dat</span>} />
+      <Radek popis="Prodáno za 30 dní" hodnota={`${cislo(s.objemOkno ?? 0)} ks`} />
+      {/* Pokrytí je to, co odlišuje „mrtvý trh" od „nikdo neskenoval".
+          Bez něj by uživatel nevěděl, jestli medián stojí na 7 dnech, nebo na jednom. */}
+      <Radek popis="Dní s daty"
+             hodnota={<span className={s.dniTydne === 0 ? "text-amber-600 dark:text-amber-400" : ""}>
+               {s.dniTydne}/7 týden · {s.dniOkna}/30 okno
+             </span>} />
+      <Radek popis="Poslední zaznamenaný obchod"
+             hodnota={stariPosledniho !== null
+               ? `před ${stariPosledniho} dny`
+               : <span className="text-slate-400">—</span>} />
+
+      {l.stav === "tenky" && (
+        <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800
+                      dark:bg-amber-950/40 dark:text-amber-300">
+          Chceš vyrobit {cislo(davka)} ks, ale za týden se jich prodalo{" "}
+          {cislo(s.objemTyden ?? 0)}. Tolik kusů trh nemusí vzít — a prodej pod cenu
+          marži umaže.
+        </p>
+      )}
+      {l.stav === "zastarala" && (
+        <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800
+                      dark:bg-amber-950/40 dark:text-amber-300">
+          Za poslední týden tu nejsou data, ale za 30 dní se prodalo{" "}
+          {cislo(s.objemOkno ?? 0)} kusů. Trh existuje — jen ho poslední dny
+          nikdo neskenoval.
+        </p>
+      )}
+      {l.fantomovyListing && (
+        <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800
+                      dark:bg-amber-950/40 dark:text-amber-300">
+          Cena, se kterou se počítá tržba, je přes dvojnásobek nejvyšší denní
+          ceny skutečných obchodů. Nejspíš je to nabídka, kterou nikdo nepřijme.
+        </p>
+      )}
+    </Sekce>
+  );
+}
 
 function Sekce({ nadpis, children }: { nadpis: string; children: React.ReactNode }) {
   return (

@@ -7,7 +7,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { spocitatNapricMesty, naskokNadDruhym, souhrnPrilezitosti } from "../src/stav/napricMesty";
+import {
+  spocitatNapricMesty, naskokNadDruhym, souhrnPrilezitosti, mistaProSrovnani,
+} from "../src/stav/napricMesty";
 import { SkladCen } from "../src/stav/skladCen";
 import { HRA, MESTA } from "../src/data/hra";
 import { SUROVINY_ID } from "../src/data/kategorie";
@@ -18,7 +20,7 @@ const NASTAVENI: NastaveniSkenu = {
   mesto: "Thetford", focus: false, denniBonus: 0, premium: true,
   sazbaStanice: 200, pocetVyrobku: 100,
   rezimNakupu: "instant", rezimProdeje: "order",
-  skupina: SUROVINY_ID, kategorie: [],
+  skupina: SUROVINY_ID, kategorie: [], prodejNaBlackMarketu: false,
 };
 
 const nazev = (z: string, e: number) => `${z}${e > 0 ? `.${e}` : ""}`;
@@ -173,5 +175,29 @@ describe("náskok nad druhým městem", () => {
     expect(n).not.toBeNull();
     // Thetford s bonusem musí být lepší než město bez bonusu.
     expect(n!).toBeGreaterThan(0);
+  });
+});
+
+describe("Black Market jako osmé MÍSTO, ne osmé město", () => {
+  it("u surovin se srovnává jen 7 měst", () => {
+    const m = mistaProSrovnani(SUROVINY_ID);
+    expect(m).toHaveLength(7);
+    expect(m.every((x) => !x.naBlackMarketu)).toBe(true);
+  });
+
+  it("u výbavy přibude Caerleon → Black Market", () => {
+    const m = mistaProSrovnani("zbrane");
+    expect(m).toHaveLength(8);
+    const bm = m.filter((x) => x.naBlackMarketu);
+    expect(bm).toHaveLength(1);
+    // Vyrábí se pořád v Caerleonu — bonusy patří městu, ne Black Marketu.
+    expect(bm[0]!.mesto).toBe("Caerleon");
+  });
+
+  it("Black Market NENÍ v seznamu měst", () => {
+    // Kdyby v MESTA byl, rozbil by bonusy (nemá žádné), převozní trasy
+    // i výběr města v panelu.
+    expect(MESTA.some((m) => m.nazev === "Black Market")).toBe(false);
+    expect(mistaProSrovnani("zbrane").some((m) => m.mesto === "Black Market")).toBe(false);
   });
 });

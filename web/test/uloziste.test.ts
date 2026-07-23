@@ -30,7 +30,10 @@ const falesne = new FalesneUloziste();
 vi.stubGlobal("localStorage", falesne);
 
 // Import až po nastavení globálu — modul si při načtení zjišťuje dostupnost.
-const { nacti, uloz, zapomen, naCenu } = await import("../src/stav/uloziste");
+const {
+  nacti, uloz, zapomen, naCenu,
+  nactiUlozenouHistorii, ulozHistorii, zapomenHistorii,
+} = await import("../src/stav/uloziste");
 
 const cena = (zmeny: Partial<import("../src/stav/uloziste").UlozenaCena> = {}) => ({
   mesto: "Thetford", zaklad: "T5_ORE", enchant: 0,
@@ -165,6 +168,118 @@ describe("překročení kapacity", () => {
     expect(() => uloz("west", {}, [cena()])).not.toThrow();
     await pockejNaZapis();
     falesne.limitBajtu = null;
+  });
+});
+
+describe("historie obchodů má VLASTNÍ klíč", () => {
+  const souhrn = (zmeny: Partial<import("../src/stav/skladHistorie").UlozenySouhrn> = {}) => ({
+    mesto: "Caerleon", zaklad: "T5_PLANKS", enchant: 0,
+    medianTyden: 1000, objemTyden: 5000, objemOkno: 20000,
+    minOkno: 900, maxOkno: 1100, dniTydne: 7, dniOkna: 30,
+    posledniDen: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+    ...zmeny,
+  });
+
+  const dnes = () => new Date().toISOString().slice(0, 10);
+
+  it("co se uloží, to se načte — včetně null hodnot", () => {
+    ulozHistorii("west", [souhrn(), souhrn({
+      mesto: "Lymhurst", objemTyden: null, medianTyden: null, dniTydne: 0,
+    })], dnes());
+
+    const n = nactiUlozenouHistorii("west");
+    expect(n.souhrny).toHaveLength(2);
+    expect(n.konecOkna).toBe(dnes());
+    // Null je nositel „nevíme" — po JSON kolečku nesmí být 0.
+    const lymhurst = n.souhrny.find((s) => s.mesto === "Lymhurst")!;
+    expect(lymhurst.objemTyden).toBeNull();
+    expect(lymhurst.objemTyden).not.toBe(0);
+  });
+
+  it("PŘEPLNĚNÁ HISTORIE NESMÍ SHODIT CENY", () => {
+    // Tohle je celý důvod, proč má historie oddělený klíč. Kdyby seděla
+    // ve stejném záznamu jako ceny, zápis by při přeplnění zahodil ceny
+    // z AODP — a uživatel by přišel o sken kvůli doplňkovému údaji.
+    falesne.setItem("albion:v1:west", JSON.stringify({
+      verze: 1, ulozeno: "x",
+      ceny: [cena({ hodnota: 12345 })],
+    }));
+
+    falesne.limitBajtu = 10;                       // historie se nevejde
+    expect(() => ulozHistorii("west", [souhrn()], dnes())).not.toThrow();
+    falesne.limitBajtu = null;
+
+    // Ceny musí být netknuté.
+    expect(nacti("west").ceny[0]!.hodnota).toBe(12345);
+    // Historie prostě není — dopočítá se dalším skenem.
+    expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
+  });
+
+  it("zapomenutí historie nesmaže ceny", async () => {
+    uloz("west", {}, [cena()]);
+    await pockejNaZapis();
+    ulozHistorii("west", [souhrn()], dnes());
+
+    zapomenHistorii("west");
+
+    expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
+    expect(nacti("west").ceny).toHaveLength(1);
+  });
+
+  it("historie se drží zvlášť pro každý server", () => {
+    ulozHistorii("west", [souhrn({ medianTyden: 111 })], dnes());
+    ulozHistorii("europe", [souhrn({ medianTyden: 999 })], dnes());
+
+    expect(nactiUlozenouHistorii("west").souhrny[0]!.medianTyden).toBe(111);
+    expect(nactiUlozenouHistorii("europe").souhrny[0]!.medianTyden).toBe(999);
+  });
+});
+
+describe("historie — aplikace musí nastartovat vždy", () => {
+  it("přetočené okno se zahodí celé", () => {
+    // Konec okna starší než 30 dní = ani jeden den souhrnu už neplatí.
+    // Půlka starých souhrnů je horší než žádné — vypadala by stejně
+    // důvěryhodně jako čerstvé.
+    const davno = new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10);
+    falesne.setItem("albion:h1:west", JSON.stringify({
+      verze: 1, konecOkna: davno,
+      souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS", enchant: 0 }],
+    }));
+    expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
+  });
+
+  it("okno staré pár dní zůstane", () => {
+    const nedavno = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+    falesne.setItem("albion:h1:west", JSON.stringify({
+      verze: 1, konecOkna: nedavno,
+      souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS", enchant: 0 }],
+    }));
+    expect(nactiUlozenouHistorii("west").souhrny).toHaveLength(1);
+  });
+
+  it("poškozený obsah nezpůsobí výjimku", () => {
+    falesne.setItem("albion:h1:west", "{tohle není JSON");
+    expect(() => nactiUlozenouHistorii("west")).not.toThrow();
+    expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
+  });
+
+  it("jiná verze formátu se zahodí", () => {
+    falesne.setItem("albion:h1:west", JSON.stringify({
+      verze: 99, konecOkna: null, souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS" }],
+    }));
+    expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
+  });
+
+  it("nesmyslné položky v seznamu se přeskočí", () => {
+    falesne.setItem("albion:h1:west", JSON.stringify({
+      verze: 1, konecOkna: null,
+      souhrny: [null, { mesto: "Caerleon" }, { mesto: "Caerleon", zaklad: "T5_PLANKS" }],
+    }));
+    expect(nactiUlozenouHistorii("west").souhrny).toHaveLength(1);
+  });
+
+  it("prázdné úložiště vrátí prázdný výsledek", () => {
+    expect(nactiUlozenouHistorii("west")).toEqual({ souhrny: [], konecOkna: null });
   });
 });
 

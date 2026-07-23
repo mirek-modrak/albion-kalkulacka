@@ -13,6 +13,7 @@
 import type { Cena, TypCeny, ZdrojCeny } from "@albion/jadro";
 import type { Server } from "../data/aodp";
 import type { NastaveniSkenu } from "./sken";
+import type { UlozenySouhrn } from "./skladHistorie";
 
 /**
  * Verze formátu.
@@ -149,4 +150,99 @@ export function zapomen(server: Server): void {
 /** Převod uložené ceny zpět na `Cena` z jádra. */
 export function naCenu(u: UlozenaCena): Cena {
   return { hodnota: u.hodnota, zdroj: u.zdroj, cas: u.cas, mesto: u.mesto, typ: u.typ };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Historie obchodů — VLASTNÍ klíč, ne ten s cenami
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Proč oddělený klíč, a ne jen další pole ve `UlozenyStav`:
+ *
+ * `zapis` výš při překročení kapacity **zahodí všechny stažené ceny**
+ * a nechá jen ruční. Historie je objemově srovnatelná s cenami (sken
+ * výbavy je řádově 10 000 záznamů), takže ve společném klíči by mohla
+ * ceny vytlačit. Oddělený klíč tuhle možnost vylučuje konstrukčně:
+ * když se nevejde historie, selže zápis historie a cen se to netýká.
+ *
+ * Historie je navíc snadno nahraditelná — je to jeden dotaz při dalším
+ * skenu. Ruční ceny jsou práce uživatele. Ta hierarchie musí být vidět
+ * i v tom, co se obětuje první.
+ */
+const VERZE_HISTORIE = 1;
+
+/** Když se celé 30denní okno přetočí, uložené souhrny už nevypovídají o ničem. */
+const MAX_STARI_HISTORIE_DNI = 30;
+
+interface UlozenaHistorie {
+  verze: number;
+  konecOkna: string | null;
+  souhrny: UlozenySouhrn[];
+}
+
+function klicHistorie(server: Server): string {
+  return `albion:h${VERZE_HISTORIE}:${server}`;
+}
+
+export function nactiUlozenouHistorii(server: Server): {
+  souhrny: UlozenySouhrn[];
+  konecOkna: string | null;
+} {
+  if (!DOSTUPNE) return { souhrny: [], konecOkna: null };
+
+  try {
+    const surove = localStorage.getItem(klicHistorie(server));
+    if (!surove) return { souhrny: [], konecOkna: null };
+
+    const stav = JSON.parse(surove) as UlozenaHistorie;
+    if (stav.verze !== VERZE_HISTORIE || !Array.isArray(stav.souhrny)) {
+      return { souhrny: [], konecOkna: null };
+    }
+
+    // Přetočené okno se zahazuje celé. Půlka starých souhrnů by byla horší
+    // než žádné — vypadala by stejně důvěryhodně jako čerstvé.
+    if (stav.konecOkna) {
+      const stari = (Date.now() - new Date(`${stav.konecOkna}T00:00:00Z`).getTime()) / 86_400_000;
+      if (!Number.isFinite(stari) || stari > MAX_STARI_HISTORIE_DNI) {
+        return { souhrny: [], konecOkna: null };
+      }
+    }
+
+    return {
+      souhrny: stav.souhrny.filter((s) => s && typeof s.mesto === "string" && !!s.zaklad),
+      konecOkna: stav.konecOkna ?? null,
+    };
+  } catch {
+    return { souhrny: [], konecOkna: null };
+  }
+}
+
+/**
+ * Uloží souhrny obchodů.
+ *
+ * Bez odkladu — na rozdíl od cen se nezapisuje při psaní do políčka,
+ * ale jednou po skenu. Když se to nevejde, prostě se to neuloží:
+ * likvidita zmizí do dalšího skenu, ale výpočet ani ceny to neohrozí.
+ */
+export function ulozHistorii(
+  server: Server,
+  souhrny: UlozenySouhrn[],
+  konecOkna: string | null,
+): void {
+  if (!DOSTUPNE) return;
+  const stav: UlozenaHistorie = { verze: VERZE_HISTORIE, konecOkna, souhrny };
+  try {
+    localStorage.setItem(klicHistorie(server), JSON.stringify(stav));
+  } catch {
+    // Nevešlo se. Historie je dopočitatelná jedním skenem — nechat být.
+  }
+}
+
+export function zapomenHistorii(server: Server): void {
+  if (!DOSTUPNE) return;
+  try {
+    localStorage.removeItem(klicHistorie(server));
+  } catch {
+    // Nevadí.
+  }
 }

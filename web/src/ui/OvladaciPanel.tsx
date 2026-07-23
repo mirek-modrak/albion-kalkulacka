@@ -1,7 +1,9 @@
 import { MESTA } from "../data/hra";
 import { SERVERY, type Server } from "../data/aodp";
 import { SKUPINY, SUROVINY_ID, kategorieSPocty, nazevKategorie } from "../data/kategorie";
-import { METRIKY, potrebnaIds, type Metrika, type NastaveniSkenu } from "../stav/sken";
+import {
+  METRIKY, lzeProdatNaBM, potrebnaIds, type Metrika, type NastaveniSkenu,
+} from "../stav/sken";
 import type { StavSkenu } from "../App";
 
 interface Props {
@@ -15,6 +17,8 @@ interface Props {
   setMaxStari: (h: number) => void;
   jenZiskove: boolean;
   setJenZiskove: (b: boolean) => void;
+  /** Který režim je aktivní — Black Market se nabízí jen ve skenu města. */
+  rezim: "mesto" | "prilezitosti" | "prevoz";
   stav: StavSkenu;
   spustitSken: () => void;
   zrusitSken: () => void;
@@ -37,6 +41,10 @@ function Popisek({ children }: { children: React.ReactNode }) {
 export function OvladaciPanel(p: Props) {
   const uprav = <K extends keyof NastaveniSkenu>(klic: K, hodnota: NastaveniSkenu[K]) =>
     p.setNastaveni({ ...p.nastaveni, [klic]: hodnota });
+
+  const naBM = p.rezim === "mesto"
+    && p.nastaveni.prodejNaBlackMarketu
+    && lzeProdatNaBM(p.nastaveni.mesto, p.nastaveni.skupina);
 
   return (
     <aside className="space-y-1 rounded-xl border border-slate-200 bg-white p-4
@@ -101,17 +109,51 @@ export function OvladaciPanel(p: Props) {
         <option value="order">přes buy order (+2,5 % fee)</option>
       </select>
 
-      <Popisek>Prodej výsledku</Popisek>
-      <select className={stylPole} value={p.nastaveni.rezimProdeje}
+      {/* Na Black Marketu tahle volba neexistuje — systém vypíše cenu
+          a za tu vykoupí. Nechat ji aktivní by předstíralo volbu,
+          kterou hra nedává. */}
+      <Popisek>
+        Prodej výsledku
+        {naBM && <span className="text-amber-600 dark:text-amber-400">
+          {" "}· na Black Marketu se neuplatní
+        </span>}
+      </Popisek>
+      <select className={stylPole} value={p.nastaveni.rezimProdeje} disabled={naBM}
               onChange={(e) => uprav("rezimProdeje", e.target.value as "instant" | "order")}>
         <option value="order">přes sell order (+2,5 % fee)</option>
         <option value="instant">hned do buy orderů</option>
       </select>
 
+      {/* Black Market — jen když dává smysl. Nabízet ho u Thetfordu by
+          znamenalo mlčky předpokládat cestu do Caerleonu; nabízet ho
+          u surovin nemá smysl, ty tam neobchodují. */}
+      {/* Jen ve skenu jednoho města. V příležitostech je Black Market
+          automaticky osmým MÍSTEM ve srovnání, takže by tenhle přepínač
+          nedělal nic — a ovládací prvek bez účinku je horší než žádný. */}
+      {p.rezim === "mesto" && lzeProdatNaBM(p.nastaveni.mesto, p.nastaveni.skupina) && (
+        <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md
+                          border border-amber-400/60 bg-amber-50 p-2 text-sm
+                          dark:bg-amber-950/30">
+          <input type="checkbox" className="mt-0.5"
+                 checked={p.nastaveni.prodejNaBlackMarketu}
+                 onChange={(e) => uprav("prodejNaBlackMarketu", e.target.checked)} />
+          <span>
+            Prodat na <b>Black Market</b>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              Výbavu na běžné caerleonské tržnici skoro nikdo nekupuje —
+              vykupuje ji Black Market. Nižší setup fee (1,5 %).
+            </span>
+          </span>
+        </label>
+      )}
+
       {p.stav.druh === "bezi" ? (
         <div className="mt-4 space-y-2">
           <div className="rounded-md bg-blue-600/10 px-3 py-2 text-sm">
-            Stahuji ceny… {p.stav.hotovo}/{p.stav.celkem}
+            {/* Dvě fáze, ne jedna. Historie je řádově větší přenos než ceny
+                a bez rozlišení by to vypadalo, že se sken zasekl. */}
+            {p.stav.faze === "ceny" ? "Stahuji ceny…" : "Stahuji historii obchodů…"}{" "}
+            {p.stav.hotovo}/{p.stav.celkem}
             <div className="mt-1 h-1 overflow-hidden rounded bg-slate-300 dark:bg-slate-700">
               <div className="h-full bg-blue-600 transition-all"
                    style={{ width: `${(p.stav.hotovo / Math.max(1, p.stav.celkem)) * 100}%` }} />
@@ -272,6 +314,14 @@ function StavHlaska({ stav }: { stav: StavSkenu }) {
         {stav.zachovanoRucnich > 0 && (
           <p className="text-xs text-amber-600 dark:text-amber-400">
             {stav.zachovanoRucnich}× ponechána ruční cena — sken je nepřepisuje
+          </p>
+        )}
+        {/* Ceny se stáhly, historie ne. Ticho by tvářilo sken jako úplný
+            a sloupec likvidity by vypadal, jako by data prostě nebyla. */}
+        {stav.historieChyba && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Historie obchodů se nestáhla ({stav.historieChyba}) — ceny platí,
+            likvidita chybí.
           </p>
         )}
       </>
