@@ -13,6 +13,10 @@ interface Props {
   poZmeneCeny: () => void;
   zavrit: () => void;
   nazevPolozky: (zaklad: string, enchant: number) => string;
+  /** Srovnání měst — jen v režimu příležitostí. */
+  srovnaniMest?: { mesto: string; radek: RadekSkenu }[];
+  /** Které město se právě zobrazuje v rozpadu. */
+  zobrazeneMesto?: string;
 }
 
 const POPIS_TYPU: Record<TypCeny, string> = {
@@ -33,6 +37,11 @@ export function DetailPolozky(p: Props) {
   const typNakup = typProNakup(nastaveni.rezimNakupu);
   const typProdej = typProProdej(nastaveni.rezimProdeje);
 
+  // V režimu příležitostí je zobrazované město to nejlepší, ne to nastavené.
+  // Ceny se musí vztahovat k němu, jinak by detail ukazoval ceny odjinud,
+  // než ze kterých je spočítaný rozpad.
+  const mesto = p.zobrazeneMesto ?? nastaveni.mesto;
+
   const varianta = radek.polozka.varianty.find(
     (x) => x.enchant === radek.enchant && !x.sFactionTokenem,
   );
@@ -52,7 +61,7 @@ export function DetailPolozky(p: Props) {
           <div>
             <h2 className="text-lg font-bold">{radek.nazev}</h2>
             <p className="text-xs text-slate-500">
-              {nastaveni.mesto} · {cislo(nastaveni.pocetVyrobku)} ks ·{" "}
+              {mesto} · {cislo(nastaveni.pocetVyrobku)} ks ·{" "}
               <code>{radek.polozka.zaklad}</code>
             </p>
           </div>
@@ -63,8 +72,40 @@ export function DetailPolozky(p: Props) {
           </button>
         </div>
 
+        {p.srovnaniMest && p.srovnaniMest.length > 0 && (
+          <Sekce nadpis="Srovnání měst">
+            <p className="mb-2 text-xs text-slate-500">
+              Nákup, výroba i prodej ve stejném městě — žádné skryté náklady na cestu.
+            </p>
+            {p.srovnaniMest.map(({ mesto: m, radek: r }) => {
+              const zisk = r.vysledek?.zisk;
+              const zobrazene = mesto === m;
+              return (
+                <div key={m}
+                     className={`flex items-baseline justify-between gap-3 border-b
+                                 border-slate-100 py-1 text-sm dark:border-slate-800/60
+                                 ${zobrazene ? "font-semibold" : ""}`}>
+                  <span>{m}{zobrazene && " ←"}</span>
+                  <span className="flex gap-3 whitespace-nowrap">
+                    {r.vysledek ? (
+                      <>
+                        <span className="text-xs text-slate-500">
+                          {procenta(r.vysledek.bonus.returnRate)}
+                        </span>
+                        <span className={barvaHodnoty(zisk ?? 0)}>{seZnamenkem(zisk ?? 0)}</span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-slate-400">chybí cena</span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </Sekce>
+        )}
+
         {/* Ceny — hlavní důvod, proč detail existuje i u řádků bez výsledku */}
-        <Sekce nadpis="Ceny">
+        <Sekce nadpis={`Ceny — ${mesto}`}>
           <p className="mb-2 text-xs text-slate-500">
             Ruční hodnota má přednost a <b>nový sken ji nepřepíše</b>.
             Změna se promítne do všech řádků, které tuhle položku používají.
@@ -74,14 +115,14 @@ export function DetailPolozky(p: Props) {
             <RadekCeny
               key={`${vstup.zaklad}#${vstup.enchant}`}
               popis={`Nákup — ${p.nazevPolozky(vstup.zaklad, vstup.enchant)}`}
-              mesto={nastaveni.mesto} zaklad={vstup.zaklad} enchant={vstup.enchant}
+              mesto={mesto} zaklad={vstup.zaklad} enchant={vstup.enchant}
               typ={typNakup} sklad={sklad} poZmene={p.poZmeneCeny}
             />
           ))}
 
           <RadekCeny
             popis={`Prodej — ${radek.nazev}`}
-            mesto={nastaveni.mesto} zaklad={radek.polozka.zaklad} enchant={radek.enchant}
+            mesto={mesto} zaklad={radek.polozka.zaklad} enchant={radek.enchant}
             typ={typProdej} sklad={sklad} poZmene={p.poZmeneCeny}
           />
         </Sekce>

@@ -110,8 +110,8 @@ a ta se **musí** kontrolovat.
 | F2 | web — sken surovin | ✅ hotovo |
 | F3 | detail položky (proklik ze skenu) | ✅ hotovo |
 | F4 | sken předmětů po kategoriích | ✅ hotovo |
-| F5 | nejlepší příležitosti napříč všemi městy | ← další |
-| F6 | graf ceny a objemu v čase | |
+| F5 | nejlepší příležitosti napříč všemi městy | ✅ hotovo |
+| F6 | graf ceny a objemu v čase | ← další |
 | F7 | převoz: srovnání měst, zisk/kg, nosnost mountu | |
 | F8 | koupit vs. vyrobit | |
 | F9 | nasazení na VPS | |
