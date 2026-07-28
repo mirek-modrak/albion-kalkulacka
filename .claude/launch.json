@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5180
+    },
+    {
+      "name": "albion-pages-nahled",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--base=/albion-kalkulacka/", "--outDir", "web/dist", "--port", "4173"],
+      "port": 4173,
+      "url": "http://localhost:4173"
     }
   ]
 }

@@ -1,0 +1,56 @@
+# Nasazení na GitHub Pages.
+# Spouští se při každém pushi do main: nainstaluje závislosti, pustí testy
+# (když spadnou, nenasadí se nic), sestaví aplikaci a zveřejní web/dist.
+name: Nasazeni na GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Umožní spustit nasazení i ručně z GitHubu (záložka Actions).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Kdyby přišly dva pushe rychle po sobě, dokončí se jen ten novější.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalace závislostí
+        run: npm ci
+
+      - name: Testy (zlaté vektory)
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Nahrání výsledku pro Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Zveřejnění na Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
