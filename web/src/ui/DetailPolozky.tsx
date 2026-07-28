@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TypCeny } from "@albion/jadro";
 import type { Server } from "../data/aodp";
 import type { Lokace } from "@albion/jadro";
@@ -47,14 +47,38 @@ const POPIS_TYPU: Record<TypCeny, string> = {
 };
 
 export function DetailPolozky(p: Props) {
+  /**
+   * Zavřít, ale nejdřív doručit rozepsanou cenu.
+   *
+   * Cenové pole zapisuje do skladu až při `blur` (během psaní ne — přepočet
+   * by pole přebil). Kliknutí na ✕ nebo mimo okno pole opustí samo, takže
+   * `blur` proběhne. Escape ale kurzor v poli NECHÁVÁ — a spoléhat na to,
+   * že cenu doručí až úklid při odpojení komponenty, je křehké: `blur`
+   * z odpojení a samotné odpojení se perou o pořadí. Proto se aktivní pole
+   * opustí explicitně; `blur()` je synchronní a stihne cenu uložit dřív,
+   * než okno zmizí.
+   */
+  const oknoRef = useRef<HTMLDivElement>(null);
+  const zavrit = useCallback(() => {
+    // Opustit VŠECHNA cenová pole, ne jen to zrovna zaostřené. Escape
+    // kurzor v poli nechává, ale spoléhat na to, které pole je „aktivní",
+    // je křehké. Projít je všechna je spolehlivé bez ohledu na fokus.
+    //
+    // `focusout` (ne jen `blur()`): React doručuje onBlur přes delegovaný
+    // `focusout` na kořeni, a holé `el.blur()` ho v některých jádrech
+    // nevyvolá. Tím se rozepsaná cena uloží dřív, než okno zmizí.
+    oknoRef.current?.querySelectorAll("input").forEach((el) => {
+      el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    p.zavrit();
+  }, [p]);
+
   // Zavření klávesou Escape — samotný křížek nestačí.
-  // Závislost je `p.zavrit`, ne celé `p`: objekt props je při každém
-  // překreslení nový, takže by se posluchač zbytečně přepojoval pořád dokola.
   useEffect(() => {
-    const naKlavesu = (e: KeyboardEvent) => { if (e.key === "Escape") p.zavrit(); };
+    const naKlavesu = (e: KeyboardEvent) => { if (e.key === "Escape") zavrit(); };
     window.addEventListener("keydown", naKlavesu);
     return () => window.removeEventListener("keydown", naKlavesu);
-  }, [p.zavrit]);
+  }, [zavrit]);
 
   /**
    * Začalo kliknutí na pozadí?
@@ -100,10 +124,11 @@ export function DetailPolozky(p: Props) {
       // Zavře se jen tehdy, když kliknutí na pozadí i ZAČALO na pozadí.
       onPointerDown={(e) => { zacatekNaPozadi.current = e.target === e.currentTarget; }}
       onClick={(e) => {
-        if (e.target === e.currentTarget && zacatekNaPozadi.current) p.zavrit();
+        if (e.target === e.currentTarget && zacatekNaPozadi.current) zavrit();
       }}
     >
       <div
+        ref={oknoRef}
         className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl
                    dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
@@ -116,7 +141,7 @@ export function DetailPolozky(p: Props) {
               <code>{radek.polozka.zaklad}</code>
             </p>
           </div>
-          <button onClick={p.zavrit}
+          <button onClick={zavrit}
                   className="rounded px-2 py-1 text-slate-400 hover:bg-slate-100
                              dark:hover:bg-slate-800">
             ✕
@@ -489,16 +514,6 @@ function Dlazdice({ popis, hodnota, kladne }:
   );
 }
 
-/**
- * Odklad zápisu ceny do skladu.
- *
- * Bez něj spustí KAŽDÝ úhoz přepočet celé tabulky příležitostí.
- * Naměřeno 2026-07-23 při načteném skenu všech zbraní: jedna změna ceny
- * = 9 408 ms. Napsat pětimístnou cenu tedy znamenalo skoro minutu,
- * kdy aplikace nereagovala — a vypadalo to, že spadla.
- */
-const ODKLAD_CENY_MS = 400;
-
 /** Jedno cenové políčko včetně původu hodnoty. */
 function RadekCeny(props: {
   popis: string;
@@ -513,34 +528,39 @@ function RadekCeny(props: {
   const cena = sklad.ziskej(mesto, zaklad, enchant, typ);
   const rucni = sklad.jeRucne(mesto, zaklad, enchant, typ);
 
-  // Rozepsaná hodnota žije v políčku, ne ve skladu. Null = needituje se
-  // a bere se ta uložená. Díky tomu je psaní okamžité a přepočet proběhne
-  // až jednou, po dopsání.
+  // Rozepsaná hodnota žije v políčku, dokud v něm uživatel edituje.
+  // Null = needituje se a bere se ta uložená ze skladu.
+  //
+  // Do skladu se zapíše AŽ při opuštění pole, ne během psaní. Zápis totiž
+  // spouští přepočet celé tabulky (naměřeno 4,7 s u 3 240 řádků), a ten
+  // přepočet i re-ranking příležitostí by uprostřed psaní přebil pole
+  // hodnotou zpět. Reprodukováno 2026-07-23: napsat „14900" s jednou
+  // pauzou uprostřed skončilo v poli jako „3388" — odklad uložil půlku
+  // čísla, přepočet přebil pole a další znaky se lepily na cizí hodnotu.
   const [rozepsane, setRozepsane] = useState<string | null>(null);
-  const casovacRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Poslední nedoručená hodnota — kdyby se okno zavřelo dřív, než odklad doběhne.
+  // Co ještě není ve skladu — pro doručení při zavření okna i pro čtení
+  // aktuální hodnoty bez závislosti na re-renderu.
   const cekajiciRef = useRef<string | null>(null);
 
-  function ulozit(text: string) {
+  function dorucit() {
+    const text = cekajiciRef.current;
+    cekajiciRef.current = null;
+    setRozepsane(null);
+    if (text === null) return;               // nic se needitovalo
     if (text === "") sklad.zrusRucne(mesto, zaklad, enchant, typ);
     else sklad.ulozRucne(mesto, zaklad, enchant, typ, Number(text));
-    cekajiciRef.current = null;
     props.poZmene();
   }
 
-  /** Doručit hned — při opuštění políčka nemá smysl na odklad čekat. */
-  function dorucitHned() {
-    clearTimeout(casovacRef.current);
-    if (cekajiciRef.current !== null) ulozit(cekajiciRef.current);
-    setRozepsane(null);
-  }
-
-  // Zavření okna nesmí sníst rozepsanou cenu. Ruční cena je vědomá práce
-  // uživatele a ztratit ji kvůli tomu, že odklad nedoběhl, by bylo horší
-  // než ten odklad vůbec nemít.
+  // Zavření okna (odpojení komponenty) nesmí sníst rozepsanou cenu — ruční
+  // cena je vědomá práce uživatele. Cleanup ji doručí, i když uživatel
+  // zavřel okno bez opuštění pole.
   useEffect(() => () => {
-    clearTimeout(casovacRef.current);
-    if (cekajiciRef.current !== null) ulozit(cekajiciRef.current);
+    const text = cekajiciRef.current;
+    if (text === null) return;
+    if (text === "") sklad.zrusRucne(mesto, zaklad, enchant, typ);
+    else sklad.ulozRucne(mesto, zaklad, enchant, typ, Number(text));
+    props.poZmene();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -558,25 +578,20 @@ function RadekCeny(props: {
           value={rozepsane ?? (cena?.hodnota ?? "")}
           placeholder="zadej cenu"
           onChange={(e) => {
-            const text = e.target.value;
-            setRozepsane(text);              // v políčku hned
-            cekajiciRef.current = text;
-            clearTimeout(casovacRef.current);
-            casovacRef.current = setTimeout(() => {
-              ulozit(text);                  // do skladu až po dopsání
-              setRozepsane(null);
-            }, ODKLAD_CENY_MS);
+            // Jen do políčka a do čekající hodnoty. Sklad se netkne,
+            // dokud uživatel z pole neodejde — jinak přepočet přebije psaní.
+            setRozepsane(e.target.value);
+            cekajiciRef.current = e.target.value;
           }}
-          onBlur={dorucitHned}
-          // Enter je jasný signál „dopsal jsem" — čekat na odklad je zbytečné.
-          onKeyDown={(e) => { if (e.key === "Enter") dorucitHned(); }}
+          onBlur={dorucit}
+          // Enter je jasný signál „dopsal jsem".
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm
                      dark:border-slate-700 dark:bg-slate-950"
         />
         {rucni ? (
           <button
             onClick={() => {
-              clearTimeout(casovacRef.current);
               cekajiciRef.current = null;
               setRozepsane(null);
               sklad.zrusRucne(mesto, zaklad, enchant, typ);
