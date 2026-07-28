@@ -63,6 +63,14 @@ export interface SouhrnObchodu {
    * poznat na první pohled.
    */
   objemDen: number | null;
+  /**
+   * Medián denních průměrů za celé 30denní okno. Null = žádná data.
+   *
+   * Stabilnější než poslední cena z order booku — jeden zbloudilý order
+   * s ním nehne. Slouží jako volitelný zdroj ceny do výpočtu, když nechceš
+   * počítat z aktuálního (a často zavádějícího) snímku trhu.
+   */
+  median30: number | null;
   /** Kusů za celé 30denní okno. Null = žádná data. */
   objemOkno: number | null;
   /** Nejnižší a nejvyšší denní průměr v okně. Null = žádná data. */
@@ -76,7 +84,7 @@ export interface SouhrnObchodu {
 }
 
 const PRAZDNY: SouhrnObchodu = {
-  medianTyden: null, objemTyden: null, objemDen: null, objemOkno: null,
+  medianTyden: null, objemTyden: null, objemDen: null, median30: null, objemOkno: null,
   minOkno: null, maxOkno: null, dniTydne: 0, dniOkna: 0, posledniDen: null,
 };
 
@@ -170,6 +178,7 @@ export class SkladHistorie {
       const { zaklad, enchant } = rozlozId(s.item_id);
 
       const cenyTydne: number[] = [];
+      const cenyOkna: number[] = [];
       const objemyTydne: number[] = [];
       let objemTydne = 0;
       let objemOkna = 0;
@@ -185,6 +194,7 @@ export class SkladHistorie {
 
         dniOkna++;
         objemOkna += b.item_count;
+        cenyOkna.push(b.avg_price);
         if (min === null || b.avg_price < min) min = b.avg_price;
         if (max === null || b.avg_price > max) max = b.avg_price;
         if (posledniDen === null || den > posledniDen) posledniDen = den;
@@ -204,6 +214,7 @@ export class SkladHistorie {
         // Nula jen když ten týden data BYLA a byla nulová. Bez dat → null.
         objemTyden: dniTydne > 0 ? objemTydne : null,
         objemDen: median(objemyTydne),
+        median30: median(cenyOkna),
         objemOkno: objemOkna,
         minOkno: min, maxOkno: max,
         dniTydne, dniOkna, posledniDen,

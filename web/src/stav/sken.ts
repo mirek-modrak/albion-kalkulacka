@@ -172,9 +172,19 @@ export function kombinaceProSken(skupina: string, kategorie?: string[]): Kombina
  * a kůže. Bez vstupů by všechny řádky skončily na „chybí cena".
  */
 export function potrebnaIds(skupina: string, kategorie?: string[]): string[] {
+  return potrebnaIdsZ(kombinaceProSken(skupina, kategorie));
+}
+
+/**
+ * Všechna AODP ID pro EXPLICITNÍ seznam kombinací.
+ *
+ * Oddělené od `potrebnaIds`, aby stejnou logiku (položka + její vstupy)
+ * mohla použít dílna, která si položky vybírá po jedné, ne po kategoriích.
+ */
+export function potrebnaIdsZ(kombinace: Kombinace[]): string[] {
   const ids = new Set<string>();
 
-  for (const { polozka, enchant } of kombinaceProSken(skupina, kategorie)) {
+  for (const { polozka, enchant } of kombinace) {
     // ID se skládá VÝHRADNĚ přes aodpId — formát se liší podle druhu
     // (surovina `_LEVEL4@4` vs. výbava `@4`) a skládat ho ručně znamená
     // chybu při každém novém místě v kódu.
@@ -202,8 +212,13 @@ export function potrebnaIds(skupina: string, kategorie?: string[]): string[] {
  * nezobrazuje. Že se surovina špatně shání, aplikace neukáže.
  */
 export function skenovanaIds(skupina: string, kategorie?: string[]): string[] {
+  return skenovanaIdsZ(kombinaceProSken(skupina, kategorie));
+}
+
+/** Jen výstupy (bez vstupů) pro explicitní seznam kombinací — pro historii. */
+export function skenovanaIdsZ(kombinace: Kombinace[]): string[] {
   const ids = new Set<string>();
-  for (const { polozka, enchant } of kombinaceProSken(skupina, kategorie)) {
+  for (const { polozka, enchant } of kombinace) {
     ids.add(aodpId({ zaklad: polozka.zaklad, enchant: enchant as Enchant }, polozka.druh));
   }
   return [...ids];
@@ -224,6 +239,8 @@ const vahaVstupu = (v: Vstup) => vaha(v.zaklad);
  *   ale ještě nikdy nic nenačetl (`konec === null`), likvidita zůstane
  *   null také: tvrdit „žádné obchody" o něčem, na co jsme se neptali,
  *   by bylo prostě nepravdivé.
+ * @param kombinaceOverride  explicitní seznam položek místo výběru podle
+ *   skupiny/kategorie. Používá dílna, která si položky vybírá po jedné.
  */
 export function spocitatSken(
   nastaveni: NastaveniSkenu,
@@ -232,6 +249,7 @@ export function spocitatSken(
   konstanty: Konstanty,
   nazevPolozky: (zaklad: string, enchant: number) => string,
   historie?: SkladHistorie,
+  kombinaceOverride?: Kombinace[],
 ): RadekSkenu[] {
   // Jedna kontrola pro celý sken, ne pro každý řádek zvlášť.
   const maHistorii = historie !== undefined && historie.konec !== null;
@@ -263,7 +281,10 @@ export function spocitatSken(
   const radky: RadekSkenu[] = [];
   const typNakup = typProNakup(nastaveni.rezimNakupu);
 
-  for (const { polozka, enchant } of kombinaceProSken(nastaveni.skupina, nastaveni.kategorie)) {
+  const kombinace = kombinaceOverride
+    ?? kombinaceProSken(nastaveni.skupina, nastaveni.kategorie);
+
+  for (const { polozka, enchant } of kombinace) {
     const e = enchant as Enchant;
     const varianta = polozka.varianty.find((v) => v.enchant === e && !v.sFactionTokenem);
 

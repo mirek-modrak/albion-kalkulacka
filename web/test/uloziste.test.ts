@@ -243,8 +243,8 @@ describe("historie — aplikace musí nastartovat vždy", () => {
     // Půlka starých souhrnů je horší než žádné — vypadala by stejně
     // důvěryhodně jako čerstvé.
     const davno = new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10);
-    falesne.setItem("albion:h2:west", JSON.stringify({
-      verze: 2, konecOkna: davno,
+    falesne.setItem("albion:h3:west", JSON.stringify({
+      verze: 3, konecOkna: davno,
       souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS", enchant: 0 }],
     }));
     expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
@@ -252,29 +252,29 @@ describe("historie — aplikace musí nastartovat vždy", () => {
 
   it("okno staré pár dní zůstane", () => {
     const nedavno = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
-    falesne.setItem("albion:h2:west", JSON.stringify({
-      verze: 2, konecOkna: nedavno,
+    falesne.setItem("albion:h3:west", JSON.stringify({
+      verze: 3, konecOkna: nedavno,
       souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS", enchant: 0 }],
     }));
     expect(nactiUlozenouHistorii("west").souhrny).toHaveLength(1);
   });
 
   it("poškozený obsah nezpůsobí výjimku", () => {
-    falesne.setItem("albion:h2:west", "{tohle není JSON");
+    falesne.setItem("albion:h3:west", "{tohle není JSON");
     expect(() => nactiUlozenouHistorii("west")).not.toThrow();
     expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
   });
 
   it("jiná verze formátu se zahodí", () => {
-    falesne.setItem("albion:h2:west", JSON.stringify({
+    falesne.setItem("albion:h3:west", JSON.stringify({
       verze: 99, konecOkna: null, souhrny: [{ mesto: "Caerleon", zaklad: "T5_PLANKS" }],
     }));
     expect(nactiUlozenouHistorii("west").souhrny).toEqual([]);
   });
 
   it("nesmyslné položky v seznamu se přeskočí", () => {
-    falesne.setItem("albion:h2:west", JSON.stringify({
-      verze: 2, konecOkna: null,
+    falesne.setItem("albion:h3:west", JSON.stringify({
+      verze: 3, konecOkna: null,
       souhrny: [null, { mesto: "Caerleon" }, { mesto: "Caerleon", zaklad: "T5_PLANKS" }],
     }));
     expect(nactiUlozenouHistorii("west").souhrny).toHaveLength(1);

@@ -20,7 +20,7 @@ interface Props {
   jenZiskove: boolean;
   setJenZiskove: (b: boolean) => void;
   /** Který režim je aktivní — Black Market se nabízí jen ve skenu města. */
-  rezim: "mesto" | "prilezitosti" | "prevoz";
+  rezim: "mesto" | "prilezitosti" | "prevoz" | "dilna";
   stav: StavSkenu;
   spustitSken: () => void;
   zrusitSken: () => void;
@@ -51,20 +51,29 @@ export function OvladaciPanel(p: Props) {
   /** Převoz na BM je otázka „kde vyrábět", což řeší jen srovnání měst. */
   const lzePrevoz = p.rezim === "prilezitosti" && bmObchodujeSkupinu(p.nastaveni.skupina);
 
+  // Dílna má výběr položek i cíl (Caerleon → BM) ve svém vlastním pohledu,
+  // ne v tomhle obecném panelu. Zdejší „Co skenovat", „Město", „Prodej
+  // výsledku" ani řazení/filtry se na ni nevztahují — schovat je, ať nematou.
+  const jeDilna = p.rezim === "dilna";
+
   return (
     <aside className="space-y-1 rounded-xl border border-slate-200 bg-white p-4
                       dark:border-slate-800 dark:bg-slate-900">
       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nastavení</h2>
 
-      <Popisek>Co skenovat</Popisek>
-      <select className={stylPole} value={p.nastaveni.skupina}
-              onChange={(e) => p.setNastaveni({
-                ...p.nastaveni, skupina: e.target.value, kategorie: [],
-              })}>
-        {SKUPINY.map((s) => <option key={s.id} value={s.id}>{s.nazev}</option>)}
-      </select>
+      {!jeDilna && (
+        <>
+          <Popisek>Co skenovat</Popisek>
+          <select className={stylPole} value={p.nastaveni.skupina}
+                  onChange={(e) => p.setNastaveni({
+                    ...p.nastaveni, skupina: e.target.value, kategorie: [],
+                  })}>
+            {SKUPINY.map((s) => <option key={s.id} value={s.id}>{s.nazev}</option>)}
+          </select>
 
-      <VyberKategorii nastaveni={p.nastaveni} setNastaveni={p.setNastaveni} />
+          <VyberKategorii nastaveni={p.nastaveni} setNastaveni={p.setNastaveni} />
+        </>
+      )}
 
       <Popisek>Server</Popisek>
       <select className={stylPole} value={p.server}
@@ -72,11 +81,17 @@ export function OvladaciPanel(p: Props) {
         {SERVERY.map((s) => <option key={s.id} value={s.id}>{s.nazev}</option>)}
       </select>
 
-      <Popisek>Město (nákup, refining i prodej)</Popisek>
-      <select className={stylPole} value={p.nastaveni.mesto}
-              onChange={(e) => uprav("mesto", e.target.value)}>
-        {MESTA.map((m) => <option key={m.nazev} value={m.nazev}>{m.nazev}</option>)}
-      </select>
+      {/* V dílně se město i prodej nastavují v její vlastní hlavičce
+          („Vyrábím v / Prodávám na"), tady by to jen dublovalo a mátlo. */}
+      {!jeDilna && (
+        <>
+          <Popisek>Město (nákup, refining i prodej)</Popisek>
+          <select className={stylPole} value={p.nastaveni.mesto}
+                  onChange={(e) => uprav("mesto", e.target.value)}>
+            {MESTA.map((m) => <option key={m.nazev} value={m.nazev}>{m.nazev}</option>)}
+          </select>
+        </>
+      )}
 
       <Popisek>Denní bonus</Popisek>
       <select className={stylPole} value={p.nastaveni.denniBonus}
@@ -115,19 +130,22 @@ export function OvladaciPanel(p: Props) {
       </select>
 
       {/* Na Black Marketu tahle volba neexistuje — systém vypíše cenu
-          a za tu vykoupí. Nechat ji aktivní by předstíralo volbu,
-          kterou hra nedává. */}
-      <Popisek>
-        Prodej výsledku
-        {naBM && <span className="text-amber-600 dark:text-amber-400">
-          {" "}· na Black Marketu se neuplatní
-        </span>}
-      </Popisek>
-      <select className={stylPole} value={p.nastaveni.rezimProdeje} disabled={naBM}
-              onChange={(e) => uprav("rezimProdeje", e.target.value as "instant" | "order")}>
-        <option value="order">přes sell order (+2,5 % fee)</option>
-        <option value="instant">hned do buy orderů</option>
-      </select>
+          a za tu vykoupí. V dílně se vždy prodává na BM, takže se skryje. */}
+      {!jeDilna && (
+        <>
+          <Popisek>
+            Prodej výsledku
+            {naBM && <span className="text-amber-600 dark:text-amber-400">
+              {" "}· na Black Marketu se neuplatní
+            </span>}
+          </Popisek>
+          <select className={stylPole} value={p.nastaveni.rezimProdeje} disabled={naBM}
+                  onChange={(e) => uprav("rezimProdeje", e.target.value as "instant" | "order")}>
+            <option value="order">přes sell order (+2,5 % fee)</option>
+            <option value="instant">hned do buy orderů</option>
+          </select>
+        </>
+      )}
 
       {/* Black Market bez cesty — jen ve skenu města a jen z Caerleonu.
           Nabízet to u Thetfordu by znamenalo mlčky předpokládat teleport;
@@ -222,35 +240,43 @@ export function OvladaciPanel(p: Props) {
         </p>
       )}
 
-      <hr className="my-4 border-slate-200 dark:border-slate-800" />
+      {/* Řazení, filtr stáří, „jen ziskové" i souhrn se týkají tabulek skenu.
+          Dílna má vlastní karty ve svém pořadí, takže tahle sekce zmizí. */}
+      {!jeDilna && (
+        <>
+          <hr className="my-4 border-slate-200 dark:border-slate-800" />
 
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Zobrazení</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Zobrazení
+          </h2>
 
-      <Popisek>Seřadit podle</Popisek>
-      <select className={stylPole} value={p.metrika}
-              onChange={(e) => p.setMetrika(e.target.value as Metrika)}>
-        {METRIKY.map((m) => (
-          <option key={m.id} value={m.id}>{m.nazev}{m.popis && ` — ${m.popis}`}</option>
-        ))}
-      </select>
+          <Popisek>Seřadit podle</Popisek>
+          <select className={stylPole} value={p.metrika}
+                  onChange={(e) => p.setMetrika(e.target.value as Metrika)}>
+            {METRIKY.map((m) => (
+              <option key={m.id} value={m.id}>{m.nazev}{m.popis && ` — ${m.popis}`}</option>
+            ))}
+          </select>
 
-      <Popisek>Nejvýše stará data</Popisek>
-      <select className={stylPole} value={maxStariHodnota(p.maxStari)}
-              onChange={(e) => p.setMaxStari(Number(e.target.value))}>
-        <option value={6}>6 hodin</option>
-        <option value={24}>1 den</option>
-        <option value={48}>2 dny</option>
-        <option value={168}>týden</option>
-        <option value={0}>bez omezení</option>
-      </select>
+          <Popisek>Nejvýše stará data</Popisek>
+          <select className={stylPole} value={maxStariHodnota(p.maxStari)}
+                  onChange={(e) => p.setMaxStari(Number(e.target.value))}>
+            <option value={6}>6 hodin</option>
+            <option value={24}>1 den</option>
+            <option value={48}>2 dny</option>
+            <option value={168}>týden</option>
+            <option value={0}>bez omezení</option>
+          </select>
 
-      <label className="mt-3 flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={p.jenZiskove}
-               onChange={(e) => p.setJenZiskove(e.target.checked)} />
-        Jen ziskové
-      </label>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={p.jenZiskove}
+                   onChange={(e) => p.setJenZiskove(e.target.checked)} />
+            Jen ziskové
+          </label>
 
-      <Souhrn souhrn={p.souhrn} />
+          <Souhrn souhrn={p.souhrn} />
+        </>
+      )}
     </aside>
   );
 }

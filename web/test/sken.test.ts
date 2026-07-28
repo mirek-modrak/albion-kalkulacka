@@ -9,8 +9,8 @@
 import { describe, expect, it } from "vitest";
 import { rozdelDoDavek } from "../src/data/aodp";
 import {
-  hodnotaMetriky, kombinaceProSken, lzeProdatNaBM, potrebnaIds, seradit,
-  skenovanaIds, souhrn, spocitatSken, typProdejeProMisto,
+  hodnotaMetriky, kombinaceProSken, lzeProdatNaBM, potrebnaIds, potrebnaIdsZ, seradit,
+  skenovanaIds, skenovanaIdsZ, souhrn, spocitatSken, typProdejeProMisto,
   type RadekSkenu,
 } from "../src/stav/sken";
 import { SkladCen } from "../src/stav/skladCen";
@@ -489,5 +489,41 @@ describe("riziko převozu na Black Market", () => {
   it("ziskBezRizika ukazuje, o kolik riziko připravilo", () => {
     const r = spocti("Lymhurst", "bm-s-prevozem");
     expect(r.every((x) => x.vysledek!.ziskBezRizika > x.vysledek!.zisk)).toBe(true);
+  });
+});
+
+describe("potrebnaIdsZ / skenovanaIdsZ — explicitní seznam pro dílnu", () => {
+  const komb = kombinaceProSken("zbrane", ["sword"]).slice(0, 3);
+
+  it("potrebnaIdsZ obsahuje výstupy i vstupy vybraných položek", () => {
+    const ids = potrebnaIdsZ(komb);
+    expect(ids.some((i) => i.includes("MAIN_SWORD"))).toBe(true);
+    expect(ids.some((i) => i.includes("METALBAR"))).toBe(true);   // vstup
+  });
+
+  it("skenovanaIdsZ má jen výstupy, bez vstupů", () => {
+    const ids = skenovanaIdsZ(komb);
+    expect(ids.some((i) => i.includes("MAIN_SWORD"))).toBe(true);
+    expect(ids.some((i) => i.includes("METALBAR"))).toBe(false);
+  });
+
+  it("prázdný seznam → prázdné id", () => {
+    expect(potrebnaIdsZ([])).toEqual([]);
+    expect(skenovanaIdsZ([])).toEqual([]);
+  });
+});
+
+describe("spocitatSken s kombinaceOverride — jen vybrané položky", () => {
+  it("spočítá právě předané položky, ne celou skupinu", () => {
+    const komb = kombinaceProSken("zbrane", ["sword"]).slice(0, 2);
+    const radky = spocitatSken(
+      { mesto: "Caerleon", focus: false, denniBonus: 0, premium: true, sazbaStanice: 200,
+        pocetVyrobku: 100, rezimNakupu: "instant", rezimProdeje: "instant",
+        skupina: "zbrane", kategorie: [], mistoProdeje: "bm", ztrataZasilek: 0 } as never,
+      new SkladCen(), lokace("Caerleon"), HRA.konstanty, (z, e) => `${z}#${e}`,
+      undefined, komb,
+    );
+    expect(radky).toHaveLength(2);
+    expect(radky.map((r) => r.polozka.zaklad)).toEqual(komb.map((k) => k.polozka.zaklad));
   });
 });

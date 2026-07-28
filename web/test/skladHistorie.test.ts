@@ -201,11 +201,23 @@ describe("medián", () => {
     expect(c.maxOkno).toBe(9999);
     expect(c.dniOkna).toBe(3);
   });
+
+  it("median30 je medián přes CELÉ okno, ne jen týden", () => {
+    const s = new SkladHistorie();
+    s.naplnZAodp([serie("Caerleon", [
+      { den: 1, cena: 100, objem: 1 },     // mimo týden, ale v okně
+      { den: 2, cena: 200, objem: 1 },
+      { den: 21, cena: 900, objem: 1 },    // v týdnu
+    ])], rozloz);
+    const c = s.ziskej("Caerleon", "T5_METALBAR", 0)!;
+    expect(c.median30).toBe(200);       // medián z 100/200/900
+    expect(c.medianTyden).toBe(900);    // týden má jen ten jeden den
+  });
 });
 
 describe("stav likvidity — každý scénář MÁ spustit svůj guard", () => {
   const souhrn = (z: Partial<SouhrnObchodu> = {}): SouhrnObchodu => ({
-    medianTyden: 100, objemTyden: 1000, objemDen: 140, objemOkno: 4000,
+    medianTyden: 100, objemTyden: 1000, objemDen: 140, median30: 100, objemOkno: 4000,
     minOkno: 90, maxOkno: 110, dniTydne: 7, dniOkna: 30,
     posledniDen: "2026-07-22", ...z,
   });
@@ -273,7 +285,7 @@ describe("stav likvidity — každý scénář MÁ spustit svůj guard", () => {
 
 describe("fantomový listing", () => {
   const s = (max: number | null): SouhrnObchodu => ({
-    medianTyden: 100, objemTyden: 1000, objemOkno: 4000,
+    medianTyden: 100, objemTyden: 1000, objemDen: 140, median30: 100, objemOkno: 4000,
     minOkno: 90, maxOkno: max, dniTydne: 7, dniOkna: 30, posledniDen: "2026-07-22",
   });
 
@@ -302,7 +314,7 @@ describe("fantomový listing", () => {
 
 describe("odchylka od mediánu", () => {
   const s = (median: number | null): SouhrnObchodu => ({
-    medianTyden: median, objemTyden: 1000, objemOkno: 4000,
+    medianTyden: median, objemTyden: 1000, objemDen: 140, median30: median, objemOkno: 4000,
     minOkno: 90, maxOkno: 110, dniTydne: 7, dniOkna: 30, posledniDen: "2026-07-22",
   });
 

@@ -10,15 +10,22 @@ import {
 import { SkladCen } from "./stav/skladCen";
 import { SkladHistorie } from "./stav/skladHistorie";
 import {
-  METRIKY, lzeProdatNaBM, potrebnaIds, rozlozId, seradit, skenovanaIds,
-  souhrn, spocitatSken,
+  METRIKY, lzeProdatNaBM, potrebnaIds, potrebnaIdsZ, rozlozId, seradit,
+  skenovanaIds, skenovanaIdsZ, souhrn, spocitatSken, typProNakup,
   type Metrika, type NastaveniSkenu, type RadekSkenu, type RezimCeny,
 } from "./stav/sken";
+import { RefreshDialog } from "./ui/RefreshDialog";
+import type { UlozenaCena } from "./stav/uloziste";
 import { OvladaciPanel } from "./ui/OvladaciPanel";
 import { TabulkaSkenu } from "./ui/TabulkaSkenu";
 import { DetailPolozky } from "./ui/DetailPolozky";
 import { TabulkaPrilezitosti } from "./ui/TabulkaPrilezitosti";
 import { spocitatNapricMesty, souhrnPrilezitosti } from "./stav/napricMesty";
+import {
+  katalogDilny, kombinaceZKlicu, nactiDilnu, ulozDilnu, vyhodnotitDilnu,
+  type StavDilny,
+} from "./stav/dilna";
+import { TabDilna } from "./ui/TabDilna";
 import { seraditPrevozy, souhrnPrevozu, spocitatPrevozy, type MetrikaPrevozu } from "./stav/prevoz";
 import { TabulkaPrevozu } from "./ui/TabulkaPrevozu";
 import { PanelPrevozu } from "./ui/PanelPrevozu";
@@ -104,7 +111,15 @@ export function App() {
   //  - příležitosti: co vyrobit a kde
   //  - město: totéž podrobně pro jedno město
   //  - převoz: co koupit tady a prodat jinde (arbitráž, jiný výpočet)
-  const [rezim, setRezim] = useState<"mesto" | "prilezitosti" | "prevoz">("prilezitosti");
+  const [rezim, setRezim] = useState<"mesto" | "prilezitosti" | "prevoz" | "dilna">("prilezitosti");
+
+  // Dílna: kurátorský seznam položek + jak je vyrábět a kam prodávat.
+  // Nezávislé na serveru — „co a jak vyrábím" je volba, ne ekonomika.
+  const [dilna, setDilna] = useState<StavDilny>(() => nactiDilnu());
+  const dilnaKombinace = useMemo(() => kombinaceZKlicu(dilna.klice), [dilna.klice]);
+  const upravDilnu = (s: StavDilny) => { setDilna(s); ulozDilnu(s); };
+  // Otevřený dialog „co s ručními cenami" při stažení v dílně. Null = zavřený.
+  const [refreshManualy, setRefreshManualy] = useState<UlozenaCena[] | null>(null);
 
   const [nastaveniPrevozu, setNastaveniPrevozu] = useState({
     vychoziMesto: "Thetford",
@@ -155,8 +170,18 @@ export function App() {
   serverRef.current = server;
   const rezimRef = useRef(rezim);
   rezimRef.current = rezim;
+  const dilnaKombinaceRef = useRef(dilnaKombinace);
+  dilnaKombinaceRef.current = dilnaKombinace;
 
-  async function spustitSken() {
+  async function spustitSken(preskocitDialog = false) {
+    // V dílně se před stažením zeptáme, co s ručně zadanými cenami —
+    // ať uživatel neztratí ceny, které si zapsal z tržnice, ani nemusí
+    // ručně obcházet každou, když je chce naopak obnovit.
+    if (rezimRef.current === "dilna" && preskocitDialog !== true) {
+      const manualy = skladRef.current.export().filter((c) => c.zdroj === "rucne");
+      if (manualy.length > 0) { setRefreshManualy(manualy); return; }
+    }
+
     prerusRef.current?.abort();
     const rizeni = new AbortController();
     prerusRef.current = rizeni;
@@ -165,7 +190,13 @@ export function App() {
     setStav({ druh: "bezi", hotovo: 0, celkem: 1, faze: "ceny" });
 
     try {
-      const ids = potrebnaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
+      // Dílna tahá jen vybrané položky, ale ze VŠECH měst + Black Marketu —
+      // vyrábět se dá kdekoli (i „nejlevnější") a prodávat lokálně nebo na BM.
+      const jeDilna = rezimRef.current === "dilna";
+      const ids = jeDilna
+        ? potrebnaIdsZ(dilnaKombinaceRef.current)
+        : potrebnaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
+
       // V režimu příležitostí se tahají všechna města naráz. Nestojí to víc
       // dotazů — AODP násobí odpověď přes `locations`, ne počet dotazů
       // (ověřeno: 205 ID × 7 měst = 1 435 cen v jednom dotazu, 0,33 s).
@@ -175,12 +206,14 @@ export function App() {
       // (ověřeno: T5 Planks i T5 Metal Bar tam mají nulový týdenní objem),
       // takže u refiningu by to byla jen osmina přenosu navíc pro nic.
       const bmVHre = lzeProdatNaBM("Caerleon", nastaveniRef.current.skupina);
-      const mesta = [
-        ...(rezimRef.current === "mesto"
-          ? [nastaveniRef.current.mesto]
-          : MESTA.map((m) => m.nazev)),
-        ...(bmVHre ? [BLACK_MARKET] : []),
-      ];
+      const mesta = jeDilna
+        ? [...MESTA.map((m) => m.nazev), BLACK_MARKET]
+        : [
+            ...(rezimRef.current === "mesto"
+              ? [nastaveniRef.current.mesto]
+              : MESTA.map((m) => m.nazev)),
+            ...(bmVHre ? [BLACK_MARKET] : []),
+          ];
 
       const radky = await nactiCeny(
         serverRef.current, ids, mesta, [1], rizeni.signal,
@@ -205,9 +238,11 @@ export function App() {
       // likvidita je vlastnost toho, co prodáváš.
       let historieChyba: string | undefined;
       try {
-        const idsHistorie = skenovanaIds(
-          nastaveniRef.current.skupina, nastaveniRef.current.kategorie,
-        );
+        // Dílna: historii tahá i pro VSTUPY (ne jen výstupy), aby 30denní
+        // medián mohl sloužit jako zdroj ceny surovin, ne jen výrobku.
+        const idsHistorie = jeDilna
+          ? potrebnaIdsZ(dilnaKombinaceRef.current)
+          : skenovanaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
         setStav({ druh: "bezi", hotovo: 0, celkem: 1, faze: "historie" });
 
         const serie = await nactiHistoriiDavkove(
@@ -253,6 +288,19 @@ export function App() {
     if (maxStari > 0) v = v.filter((r) => r.stariHodin === null || r.stariHodin <= maxStari);
     return seradit(v, metrika);
   }, [radky, metrika, jenZiskove, maxStari]);
+
+  // Katalog položek pro vyhledávač dílny — z herních dat, počítá se jednou.
+  const katalog = useMemo(() => katalogDilny(), []);
+
+  // Výsledky dílny: každá položka pod svou efektivní konfigurací (globální
+  // nebo override), u „nejlevnější" napříč městy. Pořadí drží podle seznamu.
+  const dilnaVysledky = useMemo(
+    () => rezim !== "dilna" ? [] : vyhodnotitDilnu(
+      dilna, skladRef.current, historieRef.current, HRA.konstanty, nastaveni, nazevPolozky,
+    ),
+    // dilnaKombinace v závislostech drží přepočet při změně seznamu i konfigurace.
+    [rezim, nastaveni, verzeCen, dilna, dilnaKombinace],
+  );
 
   // Příležitosti napříč městy. Počítá se jen v odpovídajícím režimu —
   // je to 7× víc práce než sken jednoho města.
@@ -361,6 +409,9 @@ export function App() {
   const detailPrilezitost = detailKlic
     ? prilezitosti.find((p) => p.klic === detailKlic) ?? null
     : null;
+  const detailDilna = detailKlic
+    ? dilnaVysledky.find((v) => v.klic === detailKlic) ?? null
+    : null;
 
   return (
     <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
@@ -378,6 +429,7 @@ export function App() {
           ["prilezitosti", "Nejlepší příležitosti", "co vyrobit a kde"],
           ["mesto", "Sken jednoho města", "podrobněji"],
           ["prevoz", "Převoz", "co koupit tady a prodat jinde"],
+          ["dilna", "Dílna", "moje výroba"],
         ] as const).map(([id, popis, dovetek]) => (
           <button key={id} onClick={() => { setRezim(id); setDetailKlic(null); }}
                   className={`rounded-md px-3 py-1.5 text-sm ${rezim === id
@@ -425,6 +477,16 @@ export function App() {
                             vychoziMesto={nastaveniPrevozu.vychoziMesto}
                             ztrataZasilek={nastaveniPrevozu.ztrataZasilek} />
           </div>
+        ) : rezim === "dilna" ? (
+          <TabDilna
+            vysledky={dilnaVysledky} stav={dilna} katalog={katalog}
+            sklad={skladRef.current} davka={nastaveni.pocetVyrobku}
+            typNakup={typProNakup(nastaveni.rezimNakupu)}
+            nazevPolozky={nazevPolozky}
+            uprav={upravDilnu}
+            poZmeneCeny={() => setVerzeCen((v) => v + 1)}
+            otevritDetail={(klic) => setDetailKlic(klic)}
+          />
         ) : rezim === "prilezitosti" ? (
           <div className="space-y-3">
             {sP.podleMest.length > 0 && (
@@ -498,6 +560,43 @@ export function App() {
           verzeCen={verzeCen}
           // Přepočítá se CELÝ sken, ne jen detail — jedna cena ovlivní víc řádků
           // (T4 ingot je vstupem pro T5 a zároveň výstupem T4).
+          poZmeneCeny={() => setVerzeCen((v) => v + 1)}
+          zavrit={() => setDetailKlic(null)}
+        />
+      )}
+
+      {refreshManualy && (
+        <RefreshDialog
+          manualy={refreshManualy}
+          nazevPolozky={nazevPolozky}
+          zrusit={() => setRefreshManualy(null)}
+          potvrdit={(kAktualizaci) => {
+            // Vybrané ruční ceny zrušit → AODP je při skenu naplní znovu.
+            for (const c of kAktualizaci) {
+              skladRef.current.zrusRucne(c.mesto, c.zaklad, c.enchant, c.typ);
+            }
+            setRefreshManualy(null);
+            setVerzeCen((v) => v + 1);
+            spustitSken(true);
+          }}
+        />
+      )}
+
+      {/* Detail dílny — město výroby a prodej podle efektivní konfigurace. */}
+      {rezim === "dilna" && detailDilna && detailDilna.radek && (
+        <DetailPolozky
+          radek={detailDilna.radek}
+          zobrazeneMesto={detailDilna.mesto}
+          mistoProdeje={detailDilna.mistoProdeje !== "mesto" ? BLACK_MARKET : undefined}
+          server={server}
+          lokace={lokace(detailDilna.mesto)}
+          nastaveni={{
+            ...nastaveni, mesto: detailDilna.mesto, skupina: "zbrane",
+            mistoProdeje: detailDilna.mistoProdeje,
+          }}
+          sklad={skladRef.current}
+          nazevPolozky={nazevPolozky}
+          verzeCen={verzeCen}
           poZmeneCeny={() => setVerzeCen((v) => v + 1)}
           zavrit={() => setDetailKlic(null)}
         />

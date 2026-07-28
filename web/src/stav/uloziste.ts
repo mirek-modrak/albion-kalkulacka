@@ -177,8 +177,10 @@ export function naCenu(u: UlozenaCena): Cena {
  * (`undefined < 100` je false), takže se mrtvý trh tvářil jako v pořádku.
  * Naměřeno při proklikávání: „0 ks/den" šedě, s nápovědou „trh je dost
  * hluboký". Chybějící pole se musí zahodit, ne dopočítat.
+ *
+ * v3: přibyl `median30` (30denní medián ceny) jako volitelný zdroj ceny.
  */
-const VERZE_HISTORIE = 2;
+const VERZE_HISTORIE = 3;
 
 /** Když se celé 30denní okno přetočí, uložené souhrny už nevypovídají o ničem. */
 const MAX_STARI_HISTORIE_DNI = 30;
