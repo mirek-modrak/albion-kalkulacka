@@ -1,0 +1,48 @@
+// Pravidla přístupu k Firestore — projekt albion-kalkulacka.
+//
+// Tohle je JEDINÉ místo, kde je přístup skutečně vynucený. Cokoli
+// v aplikaci je jen pohodlí — kód je veřejný a v prohlížeči jde obejít.
+//
+// Pravidlo: přihlášený uživatel smí číst a zapisovat POUZE svůj vlastní
+// dokument, a jen když je jeho e-mail na seznamu povolených.
+//
+// Seznam povolených je dokument /config/povoleni, ne natvrdo tady —
+// přidání dalšího člověka pak nevyžaduje úpravu pravidel.
+// Volání get() uvnitř pravidel se pravidly neřídí, takže /config
+// může být pro aplikaci úplně zavřený a pravidla ho přesto přečtou.
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // E-mail malými písmeny. Bez toho by Mirek@X.cz a mirek@x.cz byly
+    // dva různé dokumenty (vada 5 v plánu F9b).
+    function mujEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function jePovoleny() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email_verified == true
+        && mujEmail() in get(/databases/$(database)/documents/config/povoleni).data.emaily;
+    }
+
+    // Data uživatele. Klíč dokumentu = e-mail malými písmeny.
+    match /uzivatele/{email} {
+      allow read, write: if jePovoleny() && email == mujEmail();
+    }
+
+    // Seznam povolených smí měnit jen Mirek v konzoli, nikdy aplikace.
+    match /config/{dokument} {
+      allow read, write: if false;
+    }
+
+    // Cokoli jiného je zavřené. Bez tohohle by nová kolekce vytvořená
+    // omylem neměla žádnou ochranu.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

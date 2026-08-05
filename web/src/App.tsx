@@ -29,6 +29,7 @@ import { TabDilna } from "./ui/TabDilna";
 import { seraditPrevozy, souhrnPrevozu, spocitatPrevozy, type MetrikaPrevozu } from "./stav/prevoz";
 import { TabulkaPrevozu } from "./ui/TabulkaPrevozu";
 import { PanelPrevozu } from "./ui/PanelPrevozu";
+import { Prihlaseni } from "./ui/Prihlaseni";
 
 /**
  * Lidský název položky.
@@ -415,12 +416,15 @@ export function App() {
 
   return (
     <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
-      <header className="mb-5">
-        <h1 className="text-xl font-bold">Albion — kde se nejvíc vydělá</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Sken refiningu. Ceny z Albion Online Data Project, herní data z commitu{" "}
-          <code className="rounded bg-slate-200 px-1 dark:bg-slate-800">{VERZE_DAT.commit}</code>.
-        </p>
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold">Albion — kde se nejvíc vydělá</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Sken refiningu. Ceny z Albion Online Data Project, herní data z commitu{" "}
+            <code className="rounded bg-slate-200 px-1 dark:bg-slate-800">{VERZE_DAT.commit}</code>.
+          </p>
+        </div>
+        <Prihlaseni />
       </header>
 
       <div className="mb-4 inline-flex rounded-lg border border-slate-300 p-0.5
