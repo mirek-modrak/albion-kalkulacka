@@ -8,7 +8,7 @@
  * Výpočet i detail se přebírají ze skenu; tady je jen výběr, konfigurace a karty.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TypCeny } from "@albion/jadro";
 import { MESTA } from "../data/hra";
 import type { SkladCen } from "../stav/skladCen";
@@ -189,6 +189,21 @@ function Vyhledavac({ katalog, klice, nazevPolozky, pridat }: {
   pridat: (klic: string) => void;
 }) {
   const [dotaz, setDotaz] = useState("");
+  // Seznam výsledků jde zavřít třemi způsoby: křížkem, Escape a klikem mimo.
+  // Bez toho by šel schovat jen smazáním celého textu.
+  const obal = useRef<HTMLDivElement>(null);
+  const [zavreno, setZavreno] = useState(false);
+  useEffect(() => {
+    if (zavreno) return;
+    const mimo = (e: MouseEvent) => {
+      if (!obal.current?.contains(e.target as Node)) setZavreno(true);
+    };
+    // `click` (ne `mousedown`) — jinak by se seznam zavřel dřív,
+    // než se stihne zpracovat kliknutí na tlačítko enchantu.
+    document.addEventListener("click", mimo);
+    return () => document.removeEventListener("click", mimo);
+  }, [zavreno]);
+
   const nalezene = useMemo(() => {
     const q = dotaz.trim().toLowerCase();
     if (q.length < 2) return [];
@@ -200,15 +215,27 @@ function Vyhledavac({ katalog, klice, nazevPolozky, pridat }: {
   const uz = new Set(klice);
 
   return (
-    <div>
-      <input
-        value={dotaz}
-        onChange={(e) => setDotaz(e.target.value)}
-        placeholder="Hledej item — např. cloth boty, sword… (anglicky)"
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm
-                   dark:border-slate-700 dark:bg-slate-950"
-      />
-      {dotaz.trim().length >= 2 && (
+    <div ref={obal}>
+      <div className="relative">
+        <input
+          value={dotaz}
+          onChange={(e) => { setDotaz(e.target.value); setZavreno(false); }}
+          onFocus={() => setZavreno(false)}
+          onKeyDown={(e) => { if (e.key === "Escape") setZavreno(true); }}
+          placeholder="Hledej item — např. cloth boty, sword… (anglicky)"
+          className="w-full rounded-md border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm
+                     dark:border-slate-700 dark:bg-slate-950"
+        />
+        {dotaz !== "" && (
+          <button type="button" onClick={() => { setDotaz(""); setZavreno(false); }}
+                  title="Vymazat hledání"
+                  className="absolute inset-y-0 right-0 px-3 text-slate-400
+                             hover:text-slate-700 dark:hover:text-slate-200">
+            ✕
+          </button>
+        )}
+      </div>
+      {dotaz.trim().length >= 2 && !zavreno && (
         <div className="mt-1 rounded-lg border border-slate-200 dark:border-slate-800">
           {nalezene.length === 0 ? (
             <p className="p-3 text-sm text-slate-500">Nic nenalezeno.</p>
