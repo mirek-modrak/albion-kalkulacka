@@ -15,10 +15,40 @@ import { AUTO_MESTO, konfigProKlic, type KonfigDilny, type StavDilny, type Vysle
 import { barvaHodnoty, barvaStari, cislo, procenta, seZnamenkem, stari } from "./format";
 import { OdznakLikvidity, ZnackaFantomu } from "./OdznakLikvidity";
 import { NastaveniPolozky, popisKonfigu } from "./TabDilna";
+import { poKliknutiNaSloupec, type NastaveniFiltru, type Razeni } from "../stav/filtrDilny";
+
+/**
+ * Klikatelná hlavička sloupce.
+ *
+ * Kliknutí na tentýž sloupec obrátí směr, na jiný začne od výchozího —
+ * u peněz shora, u názvu a stáří odspodu. Šipka ukazuje, co platí,
+ * aby uživatel nemusel hádat.
+ */
+function Hlavicka({ sloupec, vpravo, filtr, setFiltr, children }: {
+  sloupec: Razeni;
+  vpravo?: boolean;
+  filtr: NastaveniFiltru;
+  setFiltr: (f: NastaveniFiltru) => void;
+  children: React.ReactNode;
+}) {
+  const aktivni = filtr.razeni === sloupec;
+  return (
+    <th className={`px-3 py-2 ${vpravo ? "text-right" : ""}`}>
+      <button onClick={() => setFiltr(poKliknutiNaSloupec(filtr, sloupec))}
+              title="Seřadit podle tohoto sloupce"
+              className={`uppercase hover:text-slate-900 dark:hover:text-slate-200 ${
+                aktivni ? "font-bold text-slate-900 dark:text-slate-200" : ""}`}>
+        {children}{aktivni && (filtr.smer === "sestupne" ? " ▼" : " ▲")}
+      </button>
+    </th>
+  );
+}
 
 interface Props {
   vysledky: VysledekDilny[];
   stav: StavDilny;
+  filtr: NastaveniFiltru;
+  setFiltr: (f: NastaveniFiltru) => void;
   davka: number;
   nazevPolozky: (zaklad: string, enchant: number) => string;
   odebrat: (klic: string) => void;
@@ -28,20 +58,21 @@ interface Props {
 
 export function TabulkaDilny(p: Props) {
   const [rozbaleny, setRozbaleny] = useState<string | null>(null);
+  const razeni = { filtr: p.filtr, setFiltr: p.setFiltr };
 
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
       <table className="w-full min-w-[52rem] text-sm">
         <thead className="text-left text-xs uppercase text-slate-500">
           <tr className="border-b border-slate-200 dark:border-slate-800">
-            <th className="px-3 py-2">Položka</th>
+            <Hlavicka sloupec="nazev" {...razeni}>Položka</Hlavicka>
             <th className="px-3 py-2">Kde → kam</th>
-            <th className="px-3 py-2 text-right">Zisk / {cislo(p.davka)} ks</th>
-            <th className="px-3 py-2 text-right">Marže</th>
-            <th className="px-3 py-2 text-right">Náklad / ks</th>
-            <th className="px-3 py-2 text-right">Tržba / ks</th>
-            <th className="px-3 py-2">Likvidita</th>
-            <th className="px-3 py-2 text-right">Stáří</th>
+            <Hlavicka sloupec="zisk" vpravo {...razeni}>Zisk / {cislo(p.davka)} ks</Hlavicka>
+            <Hlavicka sloupec="marze" vpravo {...razeni}>Marže</Hlavicka>
+            <Hlavicka sloupec="naklad" vpravo {...razeni}>Náklad / ks</Hlavicka>
+            <Hlavicka sloupec="trzba" vpravo {...razeni}>Tržba / ks</Hlavicka>
+            <Hlavicka sloupec="likvidita" {...razeni}>Likvidita</Hlavicka>
+            <Hlavicka sloupec="stari" vpravo {...razeni}>Stáří</Hlavicka>
             <th className="px-3 py-2" />
           </tr>
         </thead>

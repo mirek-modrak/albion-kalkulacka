@@ -128,6 +128,7 @@ export function TabDilna(p: Props) {
             </div>
           ) : pohled === "tabulka" ? (
             <TabulkaDilny vysledky={zobrazene} stav={p.stav} davka={p.davka}
+                          filtr={filtr} setFiltr={zmenFiltr}
                           nazevPolozky={p.nazevPolozky}
                           odebrat={odebrat} setOverride={nastavOverride}
                           otevritDetail={p.otevritDetail} />

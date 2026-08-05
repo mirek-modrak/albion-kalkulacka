@@ -10,7 +10,7 @@
 
 import { SKUPINY } from "../data/kategorie";
 import {
-  RAZENI, VYCHOZI_FILTR, jeFiltrPrazdny, type NastaveniFiltru, type Razeni,
+  RAZENI, VYCHOZI_FILTR, jeFiltrPrazdny, vychoziSmer, type NastaveniFiltru, type Razeni,
 } from "../stav/filtrDilny";
 
 interface Props {
@@ -42,7 +42,12 @@ export function FiltrDilny(p: Props) {
         <label className="flex items-center gap-1 text-sm">
           <span className="text-slate-500">Seřadit</span>
           <select value={p.filtr.razeni}
-                  onChange={(e) => zmen({ razeni: e.target.value as Razeni })}
+                  onChange={(e) => {
+                    // Směr se musí nastavit taky, jinak by „Název" řadil
+                    // od Z do A — seznam i klik na hlavičku se musí chovat stejně.
+                    const razeni = e.target.value as Razeni;
+                    zmen({ razeni, smer: vychoziSmer(razeni) });
+                  }}
                   className="rounded-md border border-slate-300 px-2 py-1 text-sm
                              dark:border-slate-700 dark:bg-slate-950">
             {RAZENI.map((r) => <option key={r.id} value={r.id}>{r.nazev}</option>)}
@@ -93,7 +98,10 @@ export function FiltrDilny(p: Props) {
       {p.skryto > 0 && (
         <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
           Zobrazeno {p.zobrazeno} z {p.zobrazeno + p.skryto} položek — {p.skryto} schoval filtr.{" "}
-          <button onClick={() => p.setFiltr({ ...VYCHOZI_FILTR, razeni: p.filtr.razeni })}
+          {/* Zrušit filtr = schovávání pryč, ale zvolené řazení i směr zůstávají. */}
+          <button onClick={() => p.setFiltr({
+                    ...VYCHOZI_FILTR, razeni: p.filtr.razeni, smer: p.filtr.smer,
+                  })}
                   className="underline">
             zrušit filtr
           </button>

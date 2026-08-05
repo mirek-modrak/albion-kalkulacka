@@ -14,7 +14,30 @@
 import type { VysledekDilny } from "./dilna";
 import { hodnotaMetriky, type Metrika } from "./sken";
 
-export type Razeni = "rucni" | Metrika | "nazev" | "tier";
+/**
+ * Podle čeho se řadí.
+ *
+ * Kromě metrik ze skenu i sloupce, které metrikou nejsou (náklad, tržba,
+ * likvidita, stáří) — v tabulce se na ně dá kliknout a uživatel čeká,
+ * že to zafunguje.
+ */
+export type Razeni =
+  | "rucni" | Metrika | "nazev" | "tier"
+  | "naklad" | "trzba" | "likvidita" | "stari";
+
+export type Smer = "sestupne" | "vzestupne";
+
+/**
+ * Výchozí směr při prvním kliknutí na sloupec.
+ *
+ * U peněz chce člověk nejdřív vidět to nejlepší, u názvu a stáří naopak
+ * začátek abecedy a nejčerstvější data.
+ */
+export function vychoziSmer(r: Razeni): Smer {
+  return r === "nazev" || r === "tier" || r === "stari" || r === "naklad"
+    ? "vzestupne"
+    : "sestupne";
+}
 
 export const RAZENI: { id: Razeni; nazev: string }[] = [
   { id: "rucni", nazev: "Ruční pořadí" },
@@ -25,6 +48,10 @@ export const RAZENI: { id: Razeni; nazev: string }[] = [
   { id: "ziskNaFocus", nazev: "Zisk na focus" },
   { id: "nazev", nazev: "Název" },
   { id: "tier", nazev: "Tier" },
+  { id: "naklad", nazev: "Náklad na kus" },
+  { id: "trzba", nazev: "Tržba na kus" },
+  { id: "likvidita", nazev: "Likvidita" },
+  { id: "stari", nazev: "Stáří cen" },
 ];
 
 export interface NastaveniFiltru {
@@ -36,6 +63,7 @@ export interface NastaveniFiltru {
   enchanty: number[];
   skupiny: string[];
   razeni: Razeni;
+  smer: Smer;
 }
 
 export const VYCHOZI_FILTR: NastaveniFiltru = {
@@ -46,7 +74,21 @@ export const VYCHOZI_FILTR: NastaveniFiltru = {
   enchanty: [],
   skupiny: [],
   razeni: "rucni",
+  smer: "sestupne",
 };
+
+/**
+ * Kliknutí na sloupec: stejný sloupec obrátí směr, jiný začne od začátku.
+ *
+ * Tady schválně, ne v komponentě — ať se to dá otestovat bez klikání
+ * a ať se to chová stejně, kdyby řazení řídilo i něco jiného.
+ */
+export function poKliknutiNaSloupec(f: NastaveniFiltru, sloupec: Razeni): NastaveniFiltru {
+  if (f.razeni === sloupec) {
+    return { ...f, smer: f.smer === "sestupne" ? "vzestupne" : "sestupne" };
+  }
+  return { ...f, razeni: sloupec, smer: vychoziSmer(sloupec) };
+}
 
 /** Je filtr ve výchozím stavu (tedy nic neschovává)? Řazení se nepočítá. */
 export function jeFiltrPrazdny(f: NastaveniFiltru): boolean {
@@ -104,27 +146,49 @@ function projdeFiltrem(v: VysledekDilny, f: NastaveniFiltru, d: Doplnky): boolea
   return true;
 }
 
-/** Řadí se podle peněz? Pak položky bez ceny patří vždy dolů. */
-function jePenezni(r: Razeni): boolean {
-  return r !== "rucni" && r !== "nazev" && r !== "tier";
+/** Hodnota sloupce, který není metrikou skenu. Vyšší = „lepší" není pravidlo. */
+function hodnotaSloupce(v: VysledekDilny, r: Razeni): number {
+  const vyp = v.radek?.vysledek;
+  switch (r) {
+    case "naklad": return vyp?.nakladyCelkem ?? 0;
+    case "trzba": return vyp?.trzbaHruba ?? 0;
+    // Denní objem obchodů. Chybí-li historie, patří položka dolů — proto -1,
+    // ne nula: nula je legitimní hodnota „nic se neobchoduje".
+    case "likvidita": return v.radek?.likvidita?.souhrn?.objemDen ?? -1;
+    case "stari": return v.radek?.stariHodin ?? -1;
+    default: return 0;
+  }
+}
+
+/** Řazení, která umí spočítat `hodnotaMetriky` ze skenu. */
+const METRIKY_SKENU: Razeni[] = ["zisk", "marze", "ziskNaKus", "ziskNaKg", "ziskNaFocus"];
+
+function jeMetrikaSkenu(r: Razeni): r is Metrika {
+  return METRIKY_SKENU.includes(r);
 }
 
 function porovnej(a: VysledekDilny, b: VysledekDilny, f: NastaveniFiltru, d: Doplnky): number {
-  if (f.razeni === "nazev") return d.nazev(a).localeCompare(d.nazev(b), "cs");
+  const obrat = f.smer === "vzestupne" ? -1 : 1;
+
+  if (f.razeni === "nazev") return -obrat * d.nazev(a).localeCompare(d.nazev(b), "cs");
   if (f.razeni === "tier") {
     const rozdil = (tierZKlice(a.klic) ?? 0) - (tierZKlice(b.klic) ?? 0);
-    return rozdil !== 0 ? rozdil : enchantZKlice(a.klic) - enchantZKlice(b.klic);
+    const vysledek = rozdil !== 0 ? rozdil : enchantZKlice(a.klic) - enchantZKlice(b.klic);
+    return -obrat * vysledek;
   }
 
-  // Bez ceny vždy dolů. Nula by je zamíchala mezi ztrátové položky
-  // a uživatel by nahoře viděl to, o čem se neví nic.
+  // Bez ceny vždy dolů — a to i při obráceném směru. Nula by je zamíchala
+  // mezi ztrátové položky a nahoře by bylo to, o čem se neví nic.
+  // Obrácení směru na tomhle nic nemění: neznámé patří na konec vždy.
   const aMa = maCenu(a);
   const bMa = maCenu(b);
   if (aMa !== bMa) return aMa ? -1 : 1;
   if (!aMa) return 0;
 
-  return hodnotaMetriky(b.radek!, f.razeni as Metrika)
-    - hodnotaMetriky(a.radek!, f.razeni as Metrika);
+  const rozdil = jeMetrikaSkenu(f.razeni)
+    ? hodnotaMetriky(b.radek!, f.razeni) - hodnotaMetriky(a.radek!, f.razeni)
+    : hodnotaSloupce(b, f.razeni) - hodnotaSloupce(a, f.razeni);
+  return obrat * rozdil;
 }
 
 export interface Vysledek {
@@ -181,6 +245,7 @@ export function nactiFiltr(): NastaveniFiltru {
       enchanty: Array.isArray(d.enchanty) ? d.enchanty.filter((x) => typeof x === "number") : [],
       skupiny: Array.isArray(d.skupiny) ? d.skupiny.filter((x) => typeof x === "string") : [],
       razeni: RAZENI.some((r) => r.id === d.razeni) ? d.razeni! : "rucni",
+      smer: d.smer === "vzestupne" ? "vzestupne" : "sestupne",
       hledani: typeof d.hledani === "string" ? d.hledani : "",
     };
   } catch {

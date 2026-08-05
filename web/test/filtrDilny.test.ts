@@ -17,7 +17,7 @@ class FalesneUloziste {
 vi.stubGlobal("localStorage", new FalesneUloziste());
 
 const {
-  VYCHOZI_FILTR, dostupneEnchanty, dostupneTiery, enchantZKlice, filtrujARad,
+  VYCHOZI_FILTR, dostupneEnchanty, dostupneTiery, enchantZKlice, filtrujARad, poKliknutiNaSloupec,
   jeFiltrPrazdny, nactiFiltr, tierZKlice, ulozFiltr,
 } = await import("../src/stav/filtrDilny");
 
@@ -138,14 +138,76 @@ describe("řazení", () => {
   });
 
   it("podle názvu se položka bez ceny řadí normálně", () => {
-    expect(filtrujARad(data, filtr({ razeni: "nazev" }), doplnky).zobrazene.map((x) => x.klic))
+    expect(filtrujARad(data, filtr({ razeni: "nazev", smer: "vzestupne" }), doplnky).zobrazene.map((x) => x.klic))
       .toEqual(["T6_ARMOR#0", "T4_SWORD#0", "T5_ARMOR#0"]);
   });
 
   it("podle tieru, při shodě podle enchantu", () => {
     const d = [polozka("T5_A#2", 1), polozka("T4_B#0", 1), polozka("T5_A#0", 1)];
-    expect(filtrujARad(d, filtr({ razeni: "tier" }), doplnky).zobrazene.map((x) => x.klic))
+    expect(filtrujARad(d, filtr({ razeni: "tier", smer: "vzestupne" }), doplnky).zobrazene.map((x) => x.klic))
       .toEqual(["T4_B#0", "T5_A#0", "T5_A#2"]);
+  });
+});
+
+describe("kliknutí na sloupec v tabulce", () => {
+  it("jiný sloupec začne od výchozího směru — u peněz shora", () => {
+    const f = poKliknutiNaSloupec(VYCHOZI_FILTR, "marze");
+    expect(f.razeni).toBe("marze");
+    expect(f.smer).toBe("sestupne");
+  });
+
+  it("u názvu a stáří se začíná odspodu", () => {
+    expect(poKliknutiNaSloupec(VYCHOZI_FILTR, "nazev").smer).toBe("vzestupne");
+    expect(poKliknutiNaSloupec(VYCHOZI_FILTR, "stari").smer).toBe("vzestupne");
+  });
+
+  it("tentýž sloupec podruhé obrátí směr, potřetí zase zpátky", () => {
+    const prvni = poKliknutiNaSloupec(VYCHOZI_FILTR, "zisk");
+    const druhy = poKliknutiNaSloupec(prvni, "zisk");
+    const treti = poKliknutiNaSloupec(druhy, "zisk");
+    expect([prvni.smer, druhy.smer, treti.smer])
+      .toEqual(["sestupne", "vzestupne", "sestupne"]);
+  });
+
+  it("přepnutí na jiný sloupec nezdědí obrácený směr", () => {
+    const obraceny = poKliknutiNaSloupec(poKliknutiNaSloupec(VYCHOZI_FILTR, "zisk"), "zisk");
+    expect(poKliknutiNaSloupec(obraceny, "marze").smer).toBe("sestupne");
+  });
+
+  it("filtry zůstanou zachované — kliknutí na sloupec je jen řazení", () => {
+    const sFiltrem = { ...VYCHOZI_FILTR, tiery: [5], hledani: "sword" };
+    const po = poKliknutiNaSloupec(sFiltrem, "zisk");
+    expect(po.tiery).toEqual([5]);
+    expect(po.hledani).toBe("sword");
+  });
+});
+
+describe("obrácené řazení", () => {
+  const data = [
+    polozka("A#0", 100, "Aaa"),
+    polozka("B#0", 900, "Bbb"),
+    polozka("C#0", null, "Ccc"),
+  ];
+
+  it("vzestupně dá nejmenší zisk nahoru", () => {
+    const v = filtrujARad(data, filtr({ razeni: "zisk", smer: "vzestupne" }), doplnky);
+    expect(v.zobrazene.map((x) => x.klic)).toEqual(["A#0", "B#0", "C#0"]);
+  });
+
+  it("položka bez ceny zůstává dole i při obráceném směru", () => {
+    // Tohle je ta past: obrácení směru by ji jinak vyhodilo nahoru
+    // a uživatel by nahoře viděl to, o čem se neví nic.
+    for (const smer of ["sestupne", "vzestupne"] as const) {
+      const v = filtrujARad(data, filtr({ razeni: "zisk", smer }), doplnky);
+      expect(v.zobrazene[v.zobrazene.length - 1]!.klic).toBe("C#0");
+    }
+  });
+
+  it("název vzestupně i sestupně", () => {
+    const vzhuru = filtrujARad(data, filtr({ razeni: "nazev", smer: "vzestupne" }), doplnky);
+    const dolu = filtrujARad(data, filtr({ razeni: "nazev", smer: "sestupne" }), doplnky);
+    expect(vzhuru.zobrazene.map((x) => x.klic)).toEqual(["A#0", "B#0", "C#0"]);
+    expect(dolu.zobrazene.map((x) => x.klic)).toEqual(["C#0", "B#0", "A#0"]);
   });
 });
 
