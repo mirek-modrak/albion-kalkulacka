@@ -157,7 +157,18 @@ function firestore() {
   return rozpracovanaData;
 }
 
-export class ChybaDat extends Error {}
+export class ChybaDat extends Error {
+  /**
+   * Původní kód od Firebase (`permission-denied`, `unavailable`…).
+   *
+   * Brána podle něj rozlišuje „server řekl ne" od „server neodpověděl".
+   * Kdyby se to slilo do jedné chyby, výpadek sítě by uživateli tvrdil,
+   * že nemá přístup.
+   */
+  constructor(zprava: string, readonly kod?: string) {
+    super(zprava);
+  }
+}
 
 function srozumitelnaChybaDat(e: unknown): string {
   const kod = (e as { code?: string })?.code ?? "";
@@ -183,7 +194,7 @@ export async function nactiZeServeru(email: string): Promise<Balicek | null> {
     if (!snimek.exists()) return null;
     return snimek.data() as Balicek;
   } catch (e) {
-    throw new ChybaDat(srozumitelnaChybaDat(e));
+    throw new ChybaDat(srozumitelnaChybaDat(e), (e as { code?: string })?.code);
   }
 }
 
@@ -243,7 +254,7 @@ export async function ulozNaServer(
     const po = await modul.getDoc(ref);
     return { stav: "ulozeno", novyCas: casZmeny(po.data() as Balicek) };
   } catch (e) {
-    throw new ChybaDat(srozumitelnaChybaDat(e));
+    throw new ChybaDat(srozumitelnaChybaDat(e), (e as { code?: string })?.code);
   }
 }
 

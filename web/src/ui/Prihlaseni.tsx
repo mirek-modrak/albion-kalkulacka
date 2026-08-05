@@ -1,9 +1,9 @@
 /**
- * Přihlášení a stav synchronizace v hlavičce.
+ * Kdo je přihlášený a jak je na tom synchronizace — proužek v hlavičce.
  *
- * Bez přihlášení musí aplikace fungovat úplně stejně jako dřív — proto se
- * tady nic neděje, dokud uživatel sám neklikne (nebo se nevrátí přihlášený
- * z minula).
+ * Přihlašování samotné řeší [Brana](./Brana.tsx); sem se uživatel dostane,
+ * jen když už je ověřený. Tahle komponenta tedy jen ukazuje stav a umí
+ * odhlásit.
  *
  * Když se server a prohlížeč rozejdou, **nic se nepřepíše samo** — objeví se
  * volba. Ručně zadané ceny jsou práce uživatele a tiše je zahodit nesmíme.
@@ -11,11 +11,10 @@
 
 import { useEffect, useState } from "react";
 import { popis } from "../stav/balicek";
-import { ChybaPrihlaseni, bylPrihlasen, odhlas, prihlas, sledujPrihlaseni, type Uzivatel } from "../stav/sync";
+import { odhlas, type Uzivatel } from "../stav/sync";
 import { spustSynchronizaci, type Rizeni, type Stav } from "../stav/synchronizace";
 
-export function Prihlaseni() {
-  const [uzivatel, setUzivatel] = useState<Uzivatel | null>(null);
+export function Prihlaseni({ uzivatel }: { uzivatel: Uzivatel }) {
   const [pracuje, setPracuje] = useState(false);
   const [chyba, setChyba] = useState<string | null>(null);
   const [stav, setStav] = useState<Stav | null>(null);
@@ -24,49 +23,18 @@ export function Prihlaseni() {
   // by nedělala nic a nikde by se to neprojevilo jako chyba.
   const [rizeni, setRizeni] = useState<Rizeni | null>(null);
 
-  // Obnovení přihlášení po návratu na stránku. Firebase se načte JEN když
-  // tu uživatel přihlášený už byl — ostatní si ho nemusí stahovat.
+  const email = uzivatel.email;
   useEffect(() => {
-    if (!bylPrihlasen()) return;
-    let ukonci: (() => void) | undefined;
-    let zrusen = false;
-    sledujPrihlaseni((u) => setUzivatel(u))
-      .then((f) => { if (zrusen) f(); else ukonci = f; })
-      .catch(() => setChyba("Přihlašovací službu se nepodařilo načíst."));
-    return () => { zrusen = true; ukonci?.(); };
-  }, []);
-
-  // Synchronizace běží, dokud je uživatel přihlášený.
-  //
-  // Závislost je e-mail, ne celý objekt: sledování přihlášení hlásí stav
-  // opakovaně a pokaždé novým objektem — na objektu by se synchronizace
-  // pořád dokola restartovala a rozdělaný zápis by se zahazoval.
-  const email = uzivatel?.email ?? null;
-  useEffect(() => {
-    if (!email) { setStav(null); setRizeni(null); return; }
     const r = spustSynchronizaci(email, setStav);
     setRizeni(r);
     return () => { r.zastav(); setRizeni(null); };
   }, [email]);
 
-  async function klikPrihlasit() {
-    setPracuje(true);
-    setChyba(null);
-    try {
-      setUzivatel(await prihlas());
-      sledujPrihlaseni((u) => setUzivatel(u)).catch(() => {});
-    } catch (e) {
-      setChyba(e instanceof ChybaPrihlaseni ? e.message : "Přihlášení se nepovedlo.");
-    } finally {
-      setPracuje(false);
-    }
-  }
-
   async function klikOdhlasit() {
     setPracuje(true);
     try {
       await odhlas();
-      setUzivatel(null);
+      // Brána si odhlášení všimne sama a vrátí přihlašovací obrazovku.
     } catch {
       setChyba("Odhlášení se nepovedlo.");
     } finally {
@@ -74,23 +42,9 @@ export function Prihlaseni() {
     }
   }
 
-  if (!uzivatel) {
-    return (
-      <div className="text-right text-sm">
-        <button onClick={klikPrihlasit} disabled={pracuje}
-                className="rounded-md border border-slate-300 px-3 py-1.5
-                           text-slate-700 disabled:opacity-50
-                           dark:border-slate-700 dark:text-slate-300">
-          {pracuje ? "Přihlašuji…" : "Přihlásit přes Google"}
-        </button>
-        {chyba && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{chyba}</p>}
-      </div>
-    );
-  }
-
   return (
     <div className="text-right text-sm">
-      <span className="text-slate-600 dark:text-slate-400">{uzivatel.email}</span>
+      <span className="text-slate-600 dark:text-slate-400">{email}</span>
       <button onClick={klikOdhlasit} disabled={pracuje}
               className="ml-2 rounded-md border border-slate-300 px-2 py-1
                          text-slate-600 disabled:opacity-50

@@ -30,6 +30,7 @@ import { seraditPrevozy, souhrnPrevozu, spocitatPrevozy, type MetrikaPrevozu } f
 import { TabulkaPrevozu } from "./ui/TabulkaPrevozu";
 import { PanelPrevozu } from "./ui/PanelPrevozu";
 import { Prihlaseni } from "./ui/Prihlaseni";
+import type { Uzivatel } from "./stav/sync";
 
 /**
  * Lidský název položky.
@@ -92,7 +93,7 @@ const VYCHOZI_NASTAVENI: NastaveniSkenu = {
   ztrataZasilek: 0.05,
 };
 
-export function App() {
+export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const [server, setServer] = useState<Server>("west");
   // Uložené nastavení výchozí hodnoty PŘEPÍŠE, nenahradí — kdyby v uložených
   // datech chybělo pole přidané v novější verzi, zůstane výchozí.
@@ -424,7 +425,7 @@ export function App() {
             <code className="rounded bg-slate-200 px-1 dark:bg-slate-800">{VERZE_DAT.commit}</code>.
           </p>
         </div>
-        <Prihlaseni />
+        <Prihlaseni uzivatel={uzivatel} />
       </header>
 
       <div className="mb-4 inline-flex rounded-lg border border-slate-300 p-0.5
