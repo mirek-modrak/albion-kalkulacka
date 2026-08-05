@@ -21,6 +21,13 @@ import { barvaHodnoty, barvaStari, cislo, procenta, seZnamenkem, stari } from ".
 import { OdznakLikvidity, ZnackaFantomu } from "./OdznakLikvidity";
 import { PanelSurovin } from "./PanelSurovin";
 import { PresetyDilny } from "./PresetyDilny";
+import { skupinaProKategorii } from "../data/kategorie";
+import {
+  dostupneEnchanty, dostupneTiery, filtrujARad, nactiFiltr, nactiPohled, ulozFiltr, ulozPohled,
+  type NastaveniFiltru, type Pohled,
+} from "../stav/filtrDilny";
+import { FiltrDilny } from "./FiltrDilny";
+import { TabulkaDilny } from "./TabulkaDilny";
 
 interface Props {
   vysledky: VysledekDilny[];
@@ -44,6 +51,21 @@ export function popisKonfigu(k: KonfigDilny): string {
 }
 
 export function TabDilna(p: Props) {
+  const [filtr, setFiltr] = useState(nactiFiltr);
+  const [pohled, setPohled] = useState(nactiPohled);
+
+  const zmenFiltr = (f: NastaveniFiltru) => { setFiltr(f); ulozFiltr(f); };
+  const zmenPohled = (x: Pohled) => { setPohled(x); ulozPohled(x); };
+
+  const { zobrazene, skryto } = useMemo(
+    () => filtrujARad(p.vysledky, filtr, {
+      nazev: (v) => v.radek?.nazev
+        ?? p.nazevPolozky(v.klic.split("#")[0] ?? "", Number(v.klic.split("#")[1] ?? 0)),
+      skupina: (v) => skupinaProKategorii(v.radek?.polozka?.kategorie),
+    }),
+    [p.vysledky, filtr, p.nazevPolozky],
+  );
+
   const pridat = (klic: string) => {
     if (!p.stav.klice.includes(klic)) {
       p.uprav({ ...p.stav, klice: [...p.stav.klice, klic] });
@@ -82,18 +104,47 @@ export function TabDilna(p: Props) {
           <PanelSurovin stav={p.stav} sklad={p.sklad} typNakup={p.typNakup}
                         nazevPolozky={p.nazevPolozky} poZmeneCeny={p.poZmeneCeny} />
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            {p.vysledky.map((v) => (
-              <Karta key={v.klic} vysledek={v}
-                     globalni={p.stav.konfig}
-                     override={p.stav.override[v.klic]}
-                     efektivni={konfigProKlic(p.stav, v.klic)}
-                     davka={p.davka} nazevPolozky={p.nazevPolozky}
-                     odebrat={() => odebrat(v.klic)}
-                     setOverride={(k) => nastavOverride(v.klic, k)}
-                     otevritDetail={() => p.otevritDetail(v.klic)} />
+          <FiltrDilny filtr={filtr} setFiltr={zmenFiltr}
+                      tiery={dostupneTiery(p.vysledky)}
+                      enchanty={dostupneEnchanty(p.vysledky)}
+                      skryto={skryto} zobrazeno={zobrazene.length} />
+
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-slate-500">Pohled</span>
+            {([["karty", "Karty"], ["tabulka", "Tabulka"]] as const).map(([id, popisek]) => (
+              <button key={id} onClick={() => zmenPohled(id)}
+                      className={`rounded-md px-2 py-1 text-xs ${pohled === id
+                        ? "bg-blue-600 font-semibold text-white"
+                        : "border border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-400"}`}>
+                {popisek}
+              </button>
             ))}
           </div>
+
+          {zobrazene.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center
+                            text-sm text-slate-500 dark:border-slate-700">
+              Filtru neodpovídá žádná položka.
+            </div>
+          ) : pohled === "tabulka" ? (
+            <TabulkaDilny vysledky={zobrazene} stav={p.stav} davka={p.davka}
+                          nazevPolozky={p.nazevPolozky}
+                          odebrat={odebrat} setOverride={nastavOverride}
+                          otevritDetail={p.otevritDetail} />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {zobrazene.map((v) => (
+                <Karta key={v.klic} vysledek={v}
+                       globalni={p.stav.konfig}
+                       override={p.stav.override[v.klic]}
+                       efektivni={konfigProKlic(p.stav, v.klic)}
+                       davka={p.davka} nazevPolozky={p.nazevPolozky}
+                       odebrat={() => odebrat(v.klic)}
+                       setOverride={(k) => nastavOverride(v.klic, k)}
+                       otevritDetail={() => p.otevritDetail(v.klic)} />
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -267,6 +318,36 @@ function Vyhledavac({ katalog, klice, nazevPolozky, pridat }: {
   );
 }
 
+/**
+ * Nastavení jen pro jednu položku.
+ *
+ * Vytažené z karty ven, aby ho mohl použít i tabulkový pohled — jinak by
+ * tabulka uměla míň než karty a porovnání obou pohledů by bylo nefér.
+ */
+export function NastaveniPolozky({ efektivni, globalni, override, setOverride }: {
+  efektivni: KonfigDilny;
+  globalni: KonfigDilny;
+  override: KonfigDilny | undefined;
+  setOverride: (k: KonfigDilny | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <VyberMesta label="Vyrábím v" hodnota={efektivni.mesto} sAuto
+                  onZmena={(m) => setOverride({ ...efektivni, mesto: m })} />
+      <VyberProdeje naBM={efektivni.naBM}
+                    onZmena={(naBM) => setOverride({ ...efektivni, naBM })} />
+      {override && (
+        <button onClick={() => setOverride(null)}
+                className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-500
+                           dark:border-slate-700"
+                title="Používat globální nastavení">
+          zpět na globální ({popisKonfigu(globalni)})
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Karta položky ──────────────────────────────────────────────
 
 function Karta({ vysledek, globalni, override, efektivni, davka, nazevPolozky,
@@ -309,20 +390,9 @@ function Karta({ vysledek, globalni, override, efektivni, davka, nazevPolozky,
       </button>
 
       {rozbaleno && (
-        <div className="mb-2 flex flex-wrap items-end gap-2 rounded-md bg-slate-50 p-2
-                        dark:bg-slate-950/60">
-          <VyberMesta label="Vyrábím v" hodnota={efektivni.mesto} sAuto
-                      onZmena={(m) => setOverride({ ...efektivni, mesto: m })} />
-          <VyberProdeje naBM={efektivni.naBM}
-                        onZmena={(naBM) => setOverride({ ...efektivni, naBM })} />
-          {override && (
-            <button onClick={() => setOverride(null)}
-                    className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-500
-                               dark:border-slate-700"
-                    title="Používat globální nastavení">
-              zpět na globální ({popisKonfigu(globalni)})
-            </button>
-          )}
+        <div className="mb-2 rounded-md bg-slate-50 p-2 dark:bg-slate-950/60">
+          <NastaveniPolozky efektivni={efektivni} globalni={globalni}
+                            override={override} setOverride={setOverride} />
         </div>
       )}
 

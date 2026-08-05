@@ -61,6 +61,21 @@ export function kategorieSkupiny(id: string): string[] {
 }
 
 /**
+ * Kategorie → skupina. Obrácený pohled než `kategorieSkupiny`.
+ *
+ * Staví se jednou při načtení modulu — filtr Dílny se ptá při každém
+ * překreslení a procházet 53 kategorií pokaždé znovu je zbytečné.
+ */
+const SKUPINA_PRO_KATEGORII = new Map<string, string>(
+  SKUPINY.flatMap((s) => s.kategorie.map((k) => [k, s.id] as [string, string])),
+);
+
+export function skupinaProKategorii(kategorie: string | null | undefined): string | null {
+  if (!kategorie) return null;
+  return SKUPINA_PRO_KATEGORII.get(kategorie) ?? null;
+}
+
+/**
  * Konkrétní kategorie ve skupině, které v datech opravdu existují,
  * s počtem položek — pro podrobnější výběr.
  */
