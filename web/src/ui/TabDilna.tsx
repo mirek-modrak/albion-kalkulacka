@@ -52,10 +52,17 @@ export function popisKonfigu(k: KonfigDilny): string {
 
 export function TabDilna(p: Props) {
   const [filtr, setFiltr] = useState(nactiFiltr);
-  const [pohled, setPohled] = useState(nactiPohled);
-
   const zmenFiltr = (f: NastaveniFiltru) => { setFiltr(f); ulozFiltr(f); };
-  const zmenPohled = (x: Pohled) => { setPohled(x); ulozPohled(x); };
+
+  /**
+   * Pohled na seznam. Mirek si po vyzkoušení vybral tabulku (2026-08-05),
+   * takže je natvrdo — přepínač je pryč.
+   *
+   * Kód karet i `nactiPohled`/`ulozPohled` schválně **zůstávají**: kdyby se
+   * ukázalo, že karty přece jen chybí, je to jednořádkový návrat. Až bude
+   * jisté, že se nevrátí, smaže se `Karta` i tenhle řádek.
+   */
+  const pohled: Pohled = "tabulka";
 
   const { zobrazene, skryto } = useMemo(
     () => filtrujARad(p.vysledky, filtr, {
@@ -108,18 +115,6 @@ export function TabDilna(p: Props) {
                       tiery={dostupneTiery(p.vysledky)}
                       enchanty={dostupneEnchanty(p.vysledky)}
                       skryto={skryto} zobrazeno={zobrazene.length} />
-
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-slate-500">Pohled</span>
-            {([["karty", "Karty"], ["tabulka", "Tabulka"]] as const).map(([id, popisek]) => (
-              <button key={id} onClick={() => zmenPohled(id)}
-                      className={`rounded-md px-2 py-1 text-xs ${pohled === id
-                        ? "bg-blue-600 font-semibold text-white"
-                        : "border border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-400"}`}>
-                {popisek}
-              </button>
-            ))}
-          </div>
 
           {zobrazene.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center

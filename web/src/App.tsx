@@ -31,6 +31,7 @@ import { TabulkaPrevozu } from "./ui/TabulkaPrevozu";
 import { PanelPrevozu } from "./ui/PanelPrevozu";
 import { Prihlaseni } from "./ui/Prihlaseni";
 import type { Uzivatel } from "./stav/sync";
+import { nactiPredvolby, ulozPredvolby, type Rezim } from "./stav/predvolby";
 
 /**
  * Lidský název položky.
@@ -94,15 +95,22 @@ const VYCHOZI_NASTAVENI: NastaveniSkenu = {
 };
 
 export function App({ uzivatel }: { uzivatel: Uzivatel }) {
-  const [server, setServer] = useState<Server>("west");
+  // Předvolby se čtou JEDNOU při startu a všechno ostatní se odvíjí od nich.
+  //
+  // Dřív tu byl natvrdo `west` a vybraný server se nikde neukládal —
+  // kdo hraje na Europe, našel po každém obnovení stránky cizí město,
+  // cizí ceny a „chybí cena". Vypadalo to, že se nepamatuje vůbec nic.
+  const [predvolby] = useState(() => nactiPredvolby(mount(VYCHOZI_MOUNT)?.kg ?? 4116));
+
+  const [server, setServer] = useState<Server>(predvolby.server);
   // Uložené nastavení výchozí hodnoty PŘEPÍŠE, nenahradí — kdyby v uložených
   // datech chybělo pole přidané v novější verzi, zůstane výchozí.
   const [nastaveni, setNastaveni] = useState<NastaveniSkenu>(
-    () => ({ ...VYCHOZI_NASTAVENI, ...nacti("west").nastaveni }),
+    () => ({ ...VYCHOZI_NASTAVENI, ...nacti(predvolby.server).nastaveni }),
   );
-  const [metrika, setMetrika] = useState<Metrika>("marze");
-  const [maxStari, setMaxStari] = useState<number>(48);
-  const [jenZiskove, setJenZiskove] = useState(false);
+  const [metrika, setMetrika] = useState<Metrika>(predvolby.metrika);
+  const [maxStari, setMaxStari] = useState<number>(predvolby.maxStari);
+  const [jenZiskove, setJenZiskove] = useState(predvolby.jenZiskove);
   const [stav, setStav] = useState<StavSkenu>({ druh: "necinny" });
 
   // Detail se drží jako KLÍČ, ne jako objekt řádku. Kdyby se držel objekt,
@@ -113,7 +121,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   //  - příležitosti: co vyrobit a kde
   //  - město: totéž podrobně pro jedno město
   //  - převoz: co koupit tady a prodat jinde (arbitráž, jiný výpočet)
-  const [rezim, setRezim] = useState<"mesto" | "prilezitosti" | "prevoz" | "dilna">("prilezitosti");
+  const [rezim, setRezim] = useState<Rezim>(predvolby.rezim);
 
   // Dílna: kurátorský seznam položek + jak je vyrábět a kam prodávat.
   // Nezávislé na serveru — „co a jak vyrábím" je volba, ne ekonomika.
@@ -123,14 +131,10 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   // Otevřený dialog „co s ručními cenami" při stažení v dílně. Null = zavřený.
   const [refreshManualy, setRefreshManualy] = useState<UlozenaCena[] | null>(null);
 
-  const [nastaveniPrevozu, setNastaveniPrevozu] = useState({
-    vychoziMesto: "Thetford",
-    nosnostKg: mount(VYCHOZI_MOUNT)?.kg ?? 4116,
-    // Nenulová výchozí hodnota, ať se na riziko nezapomene. Není v datech,
-    // je to odhad podle trasy.
-    ztrataZasilek: 0.05,
-  });
-  const [metrikaPrevozu, setMetrikaPrevozu] = useState<MetrikaPrevozu>("ziskNaKg");
+  // Výchozí ztráta zásilek je nenulová, ať se na riziko nezapomene.
+  // Není v datech, je to odhad podle trasy.
+  const [nastaveniPrevozu, setNastaveniPrevozu] = useState(predvolby.prevoz);
+  const [metrikaPrevozu, setMetrikaPrevozu] = useState<MetrikaPrevozu>(predvolby.metrikaPrevozu);
 
   // Sklad cen přežívá překreslení. Ceny se sbírají napříč skeny —
   // ruční zadání ani starší stažení se nemají ztrácet.
@@ -141,7 +145,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const skladRef = useRef<SkladCen>(null as unknown as SkladCen);
   if (skladRef.current === null) {
     skladRef.current = new SkladCen();
-    skladRef.current.obnov(nacti("west").ceny);
+    skladRef.current.obnov(nacti(predvolby.server).ceny);
   }
   const [verzeCen, setVerzeCen] = useState(0);
 
@@ -151,7 +155,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const historieRef = useRef<SkladHistorie>(null as unknown as SkladHistorie);
   if (historieRef.current === null) {
     historieRef.current = new SkladHistorie();
-    const u = nactiUlozenouHistorii("west");
+    const u = nactiUlozenouHistorii(predvolby.server);
     historieRef.current.obnov(u.souhrny, u.konecOkna);
   }
 
@@ -358,6 +362,15 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   useEffect(() => {
     uloz(server, nastaveni, skladRef.current.export());
   }, [server, nastaveni, verzeCen]);
+
+  // Předvolby zobrazení. Odděleně od nastavení skenu — to je vázané na
+  // herní server a synchronizuje se, tohle je vlastnost zařízení.
+  useEffect(() => {
+    ulozPredvolby({
+      server, metrika, maxStari, jenZiskove, rezim,
+      prevoz: nastaveniPrevozu, metrikaPrevozu,
+    });
+  }, [server, metrika, maxStari, jenZiskove, rezim, nastaveniPrevozu, metrikaPrevozu]);
 
   // Přepnutí serveru = jiná ekonomika. Ceny z `west` nesmí platit pro `europe`,
   // proto se sklad vymění za ten uložený pro nový server.
