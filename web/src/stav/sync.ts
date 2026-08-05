@@ -19,6 +19,8 @@
  *    načítali celý Firebase u každého návštěvníka.
  */
 
+import { VERZE_BALICKU, idZarizeni, jePrilisNovy, type Balicek, type DataBalicku } from "./balicek";
+
 /** Není secret — u Firebase patří do frontendu. Ochranu dělají pravidla. */
 const KONFIG = {
   apiKey: "AIzaSyD2As3bkNA8PLIl-ItE-WySwUU7h4v9rEg",
@@ -69,12 +71,13 @@ type FirebaseAuth = Awaited<ReturnType<typeof nactiAuth>>;
 
 let rozpracovane: Promise<FirebaseAuth> | undefined;
 
+async function aplikace() {
+  const { initializeApp, getApps, getApp } = await import("firebase/app");
+  return getApps().length ? getApp() : initializeApp(KONFIG);
+}
+
 async function nactiAuth() {
-  const [{ initializeApp, getApps, getApp }, auth] = await Promise.all([
-    import("firebase/app"),
-    import("firebase/auth"),
-  ]);
-  const app = getApps().length ? getApp() : initializeApp(KONFIG);
+  const [app, auth] = await Promise.all([aplikace(), import("firebase/auth")]);
   return { auth: auth.getAuth(app), modul: auth };
 }
 
@@ -137,6 +140,110 @@ export async function prihlas(): Promise<Uzivatel> {
   } catch (e) {
     if (e instanceof ChybaPrihlaseni) throw e;
     throw new ChybaPrihlaseni(srozumitelnaChyba(e));
+  }
+}
+
+// ── Data ───────────────────────────────────────────────────────
+
+let rozpracovanaData: Promise<Awaited<ReturnType<typeof nactiFirestore>>> | undefined;
+
+async function nactiFirestore() {
+  const [app, fs] = await Promise.all([aplikace(), import("firebase/firestore")]);
+  return { db: fs.getFirestore(app), modul: fs };
+}
+
+function firestore() {
+  rozpracovanaData ??= nactiFirestore();
+  return rozpracovanaData;
+}
+
+export class ChybaDat extends Error {}
+
+function srozumitelnaChybaDat(e: unknown): string {
+  const kod = (e as { code?: string })?.code ?? "";
+  if (kod === "permission-denied") {
+    return "Tenhle účet nemá přístup k datům. Napiš Mirkovi, ať tě přidá.";
+  }
+  if (kod === "unavailable" || kod === "failed-precondition") {
+    return "Server je nedostupný. Data zůstávají uložená v prohlížeči.";
+  }
+  return `Načtení dat se nepovedlo (${kod || "neznámá chyba"}).`;
+}
+
+/**
+ * Načte balíček uživatele ze serveru.
+ *
+ * Vrací `null`, když uživatel na serveru ještě nic nemá — to není chyba,
+ * ale úplně běžný stav při prvním přihlášení.
+ */
+export async function nactiZeServeru(email: string): Promise<Balicek | null> {
+  try {
+    const { db, modul } = await firestore();
+    const snimek = await modul.getDoc(modul.doc(db, "uzivatele", normalizuj(email)));
+    if (!snimek.exists()) return null;
+    return snimek.data() as Balicek;
+  } catch (e) {
+    throw new ChybaDat(srozumitelnaChybaDat(e));
+  }
+}
+
+/** Čas poslední změny v milisekundách, nebo `null` když chybí. */
+export function casZmeny(b: Balicek | null): number | null {
+  const t = b?.aktualizovano as { toMillis?: () => number } | undefined;
+  return typeof t?.toMillis === "function" ? t.toMillis() : null;
+}
+
+export type VysledekZapisu =
+  | { stav: "ulozeno"; novyCas: number | null }
+  /** Někdo jiný (druhé zařízení) zapsal dřív — NEPŘEPISUJEME. */
+  | { stav: "konflikt"; server: Balicek }
+  /** Na serveru je novější formát, než tahle verze aplikace umí. */
+  | { stav: "novejsiFormat" };
+
+/**
+ * Uloží balíček — ale jen když se od posledního načtení nic nezměnilo.
+ *
+ * `znamyCas` je čas verze, kterou tenhle prohlížeč naposledy viděl.
+ * `null` znamená „ještě jsem nic nenačetl" — a pak se zapisuje jen do
+ * prázdna. Tím je konstrukčně vyloučené, že nové zařízení s prázdným
+ * úložištěm přepíše data na serveru (vada 1 v oponentuře).
+ */
+export async function ulozNaServer(
+  email: string,
+  data: DataBalicku,
+  znamyCas: number | null,
+): Promise<VysledekZapisu> {
+  try {
+    const { db, modul } = await firestore();
+    const ref = modul.doc(db, "uzivatele", normalizuj(email));
+
+    const vysledek = await modul.runTransaction<VysledekZapisu>(db, async (t) => {
+      const snimek = await t.get(ref);
+      if (snimek.exists()) {
+        const server = snimek.data() as Balicek;
+        if (jePrilisNovy(server)) return { stav: "novejsiFormat" };
+        const cas = casZmeny(server);
+        if (znamyCas === null || (cas !== null && cas !== znamyCas)) {
+          return { stav: "konflikt", server };
+        }
+      }
+      t.set(ref, {
+        verze: VERZE_BALICKU,
+        zarizeni: idZarizeni(),
+        aktualizovano: modul.serverTimestamp(),
+        data,
+      });
+      return { stav: "ulozeno", novyCas: null };
+    });
+
+    if (vysledek.stav !== "ulozeno") return vysledek;
+
+    // Čas přiděluje server, takže ho zjistíme až zpětným přečtením.
+    // Bez něj bychom při dalším zápisu hlásili konflikt sami se sebou.
+    const po = await modul.getDoc(ref);
+    return { stav: "ulozeno", novyCas: casZmeny(po.data() as Balicek) };
+  } catch (e) {
+    throw new ChybaDat(srozumitelnaChybaDat(e));
   }
 }
 

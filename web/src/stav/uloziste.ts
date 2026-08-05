@@ -96,7 +96,15 @@ export function nacti(server: Server): { nastaveni?: Partial<NastaveniSkenu>; ce
   }
 }
 
-let odlozenyZapis: ReturnType<typeof setTimeout> | undefined;
+/**
+ * Odložené zápisy — **jeden časovač na herní server**.
+ *
+ * Dřív to byl jeden společný časovač pro všechny servery. Když se pak
+ * uložil `west` a hned nato `europe`, druhé volání to první zrušilo
+ * a data pro `west` se nikdy nezapsala. Naráželo na to stahování dat
+ * ze serveru, které ukládá všechny servery za sebou.
+ */
+const odlozeneZapisy = new Map<Server, ReturnType<typeof setTimeout>>();
 
 /**
  * Uloží stav. Zápis je odložený — při psaní do políčka se jinak ukládá
@@ -109,8 +117,33 @@ export function uloz(
 ): void {
   if (!DOSTUPNE) return;
 
-  clearTimeout(odlozenyZapis);
-  odlozenyZapis = setTimeout(() => zapis(server, nastaveni, ceny), ODKLAD_ZAPISU_MS);
+  clearTimeout(odlozeneZapisy.get(server));
+  odlozeneZapisy.set(
+    server,
+    setTimeout(() => {
+      odlozeneZapisy.delete(server);
+      zapis(server, nastaveni, ceny);
+    }, ODKLAD_ZAPISU_MS),
+  );
+}
+
+/**
+ * Uloží okamžitě, bez odkladu.
+ *
+ * Pro dvě situace, kde odklad škodí:
+ * - zápis víc serverů za sebou (stažení dat ze serveru),
+ * - zavírání stránky — odložený zápis by nedoběhl a poslední změny
+ *   by se ztratily (vada 4 v oponentuře plánu F9b).
+ */
+export function ulozIhned(
+  server: Server,
+  nastaveni: Partial<NastaveniSkenu>,
+  ceny: UlozenaCena[],
+): void {
+  if (!DOSTUPNE) return;
+  clearTimeout(odlozeneZapisy.get(server));
+  odlozeneZapisy.delete(server);
+  zapis(server, nastaveni, ceny);
 }
 
 function zapis(server: Server, nastaveni: Partial<NastaveniSkenu>, ceny: UlozenaCena[]): void {
@@ -139,7 +172,8 @@ function zapis(server: Server, nastaveni: Partial<NastaveniSkenu>, ceny: Ulozena
 
 export function zapomen(server: Server): void {
   if (!DOSTUPNE) return;
-  clearTimeout(odlozenyZapis);
+  clearTimeout(odlozeneZapisy.get(server));
+  odlozeneZapisy.delete(server);
   try {
     localStorage.removeItem(klicUloziste(server));
   } catch {

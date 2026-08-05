@@ -33,7 +33,7 @@ vi.stubGlobal("localStorage", falesne);
 
 // Import až po nastavení globálu — modul si při načtení zjišťuje dostupnost.
 const {
-  nacti, uloz, zapomen, naCenu,
+  nacti, uloz, ulozIhned, zapomen, naCenu,
   nactiUlozenouHistorii, ulozHistorii, zapomenHistorii,
 } = await import("../src/stav/uloziste");
 
@@ -76,6 +76,26 @@ describe("uložení a načtení", () => {
 
     expect(nacti("west").ceny[0]!.hodnota).toBe(111);
     expect(nacti("europe").ceny[0]!.hodnota).toBe(999);
+  });
+
+  // Regrese: odložený zápis měl JEDEN společný časovač pro všechny servery,
+  // takže uložení druhého serveru zrušilo to první a jeho data se nikdy
+  // nezapsala. Projevilo se to při stahování dat z účtu, které ukládá
+  // všechny servery hned po sobě — nastavení pro `west` prostě zmizelo.
+  it("uložení dvou serverů hned po sobě neztratí ani jeden", async () => {
+    uloz("west", { mesto: "Caerleon" }, [cena()]);
+    uloz("europe", { mesto: "Martlock" }, [cena()]);
+    await pockejNaZapis();
+
+    expect(nacti("west").nastaveni?.mesto).toBe("Caerleon");
+    expect(nacti("west").ceny).toHaveLength(1);
+    expect(nacti("europe").nastaveni?.mesto).toBe("Martlock");
+    expect(nacti("europe").ceny).toHaveLength(1);
+  });
+
+  it("uložení bez odkladu zapíše okamžitě", () => {
+    ulozIhned("west", { mesto: "Lymhurst" }, [cena()]);
+    expect(nacti("west").nastaveni?.mesto).toBe("Lymhurst");
   });
 
   it("zapomenutí smaže jen daný server", async () => {
