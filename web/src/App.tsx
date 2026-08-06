@@ -500,6 +500,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
             vysledky={dilnaVysledky} stav={dilna} katalog={katalog}
             sklad={skladRef.current} davka={nastaveni.pocetVyrobku}
             typNakup={typProNakup(nastaveni.rezimNakupu)}
+            rezimProdeje={nastaveni.rezimProdeje}
             nazevPolozky={nazevPolozky}
             uprav={upravDilnu}
             poZmeneCeny={() => setVerzeCen((v) => v + 1)}

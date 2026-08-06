@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TypCeny } from "@albion/jadro";
+import type { RezimCeny } from "../stav/sken";
 import { MESTA } from "../data/hra";
 import type { SkladCen } from "../stav/skladCen";
 import {
@@ -26,8 +27,13 @@ import {
   dostupneEnchanty, dostupneTiery, filtrujARad, nactiFiltr, nactiPohled, ulozFiltr, ulozPohled,
   type NastaveniFiltru, type Pohled,
 } from "../stav/filtrDilny";
+import {
+  nactiSkryte, prepniSloupec, skryvamePodleCehoRadime, ulozSkryte, viditelne,
+  type SloupecId,
+} from "../stav/sloupceDilny";
 import { FiltrDilny } from "./FiltrDilny";
 import { TabulkaDilny } from "./TabulkaDilny";
+import { VolbaSloupcu } from "./VolbaSloupcu";
 
 interface Props {
   vysledky: VysledekDilny[];
@@ -37,6 +43,8 @@ interface Props {
   davka: number;
   /** Sloupec order booku pro nákup surovin — podle „Nákup surovin" v panelu. */
   typNakup: TypCeny;
+  /** Režim prodeje ze skenu — určuje, do které ceny se zapisuje ruční prodejní cena. */
+  rezimProdeje: RezimCeny;
   nazevPolozky: (zaklad: string, enchant: number) => string;
   uprav: (stav: StavDilny) => void;
   poZmeneCeny: () => void;
@@ -63,6 +71,20 @@ export function TabDilna(p: Props) {
    * jisté, že se nevrátí, smaže se `Karta` i tenhle řádek.
    */
   const pohled: Pohled = "tabulka";
+
+  const [skryteSloupce, setSkryteSloupce] = useState(nactiSkryte);
+  const sloupce = useMemo(() => viditelne(skryteSloupce), [skryteSloupce]);
+
+  const prepniSloupecUI = (id: SloupecId) => {
+    // Vypnutí sloupce, podle kterého se zrovna řadí, by tabulku seřadilo
+    // podle něčeho neviditelného — vrátíme řazení na ruční pořadí.
+    if (!skryteSloupce.includes(id) && skryvamePodleCehoRadime(id, filtr.razeni)) {
+      zmenFiltr({ ...filtr, razeni: "rucni" });
+    }
+    const nove = prepniSloupec(skryteSloupce, id);
+    setSkryteSloupce(nove);
+    ulozSkryte(nove);
+  };
 
   const { zobrazene, skryto } = useMemo(
     () => filtrujARad(p.vysledky, filtr, {
@@ -116,6 +138,8 @@ export function TabDilna(p: Props) {
                       enchanty={dostupneEnchanty(p.vysledky)}
                       skryto={skryto} zobrazeno={zobrazene.length} />
 
+          <VolbaSloupcu skryte={skryteSloupce} prepni={prepniSloupecUI} />
+
           {zobrazene.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center
                             text-sm text-slate-500 dark:border-slate-700">
@@ -123,7 +147,10 @@ export function TabDilna(p: Props) {
             </div>
           ) : pohled === "tabulka" ? (
             <TabulkaDilny vysledky={zobrazene} stav={p.stav} davka={p.davka}
+                          sloupce={sloupce}
                           filtr={filtr} setFiltr={zmenFiltr}
+                          sklad={p.sklad} rezimProdeje={p.rezimProdeje}
+                          poZmeneCeny={p.poZmeneCeny}
                           nazevPolozky={p.nazevPolozky}
                           odebrat={odebrat} setOverride={nastavOverride}
                           otevritDetail={p.otevritDetail} />

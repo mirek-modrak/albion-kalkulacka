@@ -14,7 +14,8 @@ import type { Cena, HerniPolozka, Konstanty, Lokace, TypCeny } from "@albion/jad
 import { BLACK_MARKET, HRA, MESTA, lokace, polozka } from "../data/hra";
 import type { Kombinace } from "../data/hra";
 import {
-  spocitatSken, type MistoProdeje, type NastaveniSkenu, type RadekSkenu,
+  spocitatSken, typProdejeProMisto,
+  type MistoProdeje, type NastaveniSkenu, type RadekSkenu, type RezimCeny,
 } from "./sken";
 import { SkladCen } from "./skladCen";
 import type { SkladHistorie } from "./skladHistorie";
@@ -100,6 +101,28 @@ export function konfigProKlic(stav: StavDilny, klic: string): KonfigDilny {
 export function mistoProdejeZKonfigu(mesto: string, naBM: boolean): MistoProdeje {
   if (!naBM) return "mesto";
   return mesto === DILNA_MESTO ? "bm" : "bm-s-prevozem";
+}
+
+/**
+ * Odkud se čte (a kam se ručně zapisuje) prodejní cena výrobku.
+ *
+ * **Musí to být jedno jediné místo.** Kdyby si UI pravidlo opsalo, rozešlo
+ * by se s výpočtem — uživatel by přepsal cenu a zisk by se nezměnil.
+ * To je nejhorší druh chyby: vypadá to, že aplikace ignoruje vstup.
+ *
+ * Vychází z už spočítaného `mistoProdeje`, takže respektuje i volbu
+ * „nejlevnější město" a to, že na Black Market se prodává do výkupu
+ * (`buy_max`), ne přes sell order.
+ */
+export function kamSeProdava(
+  v: VysledekDilny,
+  rezimProdeje: RezimCeny,
+): { mesto: string; typ: TypCeny } {
+  const naBM = v.mistoProdeje !== "mesto";
+  return {
+    mesto: naBM ? BLACK_MARKET : v.mesto,
+    typ: typProdejeProMisto(rezimProdeje, naBM),
+  };
 }
 
 // ── Klíč položky ───────────────────────────────────────────────
