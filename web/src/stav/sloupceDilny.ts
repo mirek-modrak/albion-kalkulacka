@@ -16,7 +16,8 @@
 import type { Razeni } from "./filtrDilny";
 
 export type SloupecId =
-  | "kdeKam" | "prodej" | "zisk" | "marze" | "naklad" | "trzba" | "likvidita" | "stari";
+  | "kdeKam" | "prodej" | "zisk" | "marze" | "ziskNaKus" | "ziskNaKg" | "ziskNaFocus"
+  | "naklad" | "trzba" | "likvidita" | "stari" | "tier";
 
 export interface DefiniceSloupce {
   id: SloupecId;
@@ -41,6 +42,15 @@ export const SLOUPCE: DefiniceSloupce[] = [
   },
   { id: "zisk", nazev: "Zisk", vpravo: true, razeni: "zisk" },
   { id: "marze", nazev: "Marže", vpravo: true, razeni: "marze" },
+  { id: "ziskNaKus", nazev: "Zisk / ks", vpravo: true, razeni: "ziskNaKus" },
+  {
+    id: "ziskNaKg", nazev: "Zisk / kg", vpravo: true, razeni: "ziskNaKg",
+    popis: "když se ti vejde jen jeden mount",
+  },
+  {
+    id: "ziskNaFocus", nazev: "Zisk / focus", vpravo: true, razeni: "ziskNaFocus",
+    popis: "když je focus vzácnější než silver",
+  },
   { id: "naklad", nazev: "Náklad / ks", vpravo: true, razeni: "naklad" },
   {
     id: "trzba", nazev: "Tržba / ks", vpravo: true, razeni: "trzba",
@@ -51,13 +61,21 @@ export const SLOUPCE: DefiniceSloupce[] = [
     id: "stari", nazev: "Stáří", vpravo: true, razeni: "stari",
     popis: "u ručních cen a u 30denního mediánu zůstává prázdné",
   },
+  {
+    id: "tier", nazev: "Tier", razeni: "tier",
+    popis: "tier je i v názvu — sloupec je hlavně na řazení",
+  },
 ];
 
 /**
- * Stáří je vypnuté rovnou: u ručně zadaných cen ani u 30denního mediánu
- * se nikdy nic nezobrazí, takže by jen zabíralo místo.
+ * Co je vypnuté, dokud si uživatel nevybere sám.
+ *
+ * Stáří proto, že u ručně zadaných cen ani u 30denního mediánu se nikdy nic
+ * nezobrazí. Zbytek proto, aby tabulka po přidání sloupců nezhoustla —
+ * kdo je chce, zapne si je.
  */
-export const VYCHOZI_SKRYTE: SloupecId[] = ["stari"];
+export const VYCHOZI_SKRYTE: SloupecId[] =
+  ["stari", "ziskNaKus", "ziskNaKg", "ziskNaFocus", "tier"];
 
 const KLIC = "albion:sloupce-dilny:v1";
 

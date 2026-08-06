@@ -10,13 +10,8 @@
 
 import { SKUPINY } from "../data/kategorie";
 import {
-  RAZENI, VYCHOZI_FILTR, jeFiltrPrazdny, moznostiRazeni, vychoziSmer,
-  type NastaveniFiltru, type Razeni,
+  VYCHOZI_FILTR, jeFiltrPrazdny, type NastaveniFiltru,
 } from "../stav/filtrDilny";
-
-function nazevRazeni(id: Razeni): string {
-  return RAZENI.find((r) => r.id === id)?.nazev ?? String(id);
-}
 
 interface Props {
   filtr: NastaveniFiltru;
@@ -25,8 +20,6 @@ interface Props {
   enchanty: number[];
   skryto: number;
   zobrazeno: number;
-  /** Řazení dostupná klikem na hlavičku — ta se v seznamu nenabízejí. */
-  pokryteSloupci: Razeni[];
 }
 
 export function FiltrDilny(p: Props) {
@@ -46,30 +39,8 @@ export function FiltrDilny(p: Props) {
                      dark:border-slate-700 dark:bg-slate-950"
         />
 
-        <label className="flex items-center gap-1 text-sm">
-          <span className="text-slate-500">Seřadit</span>
-          <select value={p.filtr.razeni}
-                  onChange={(e) => {
-                    // Směr se musí nastavit taky, jinak by „Název" řadil
-                    // od Z do A — seznam i klik na hlavičku se musí chovat stejně.
-                    const razeni = e.target.value as Razeni;
-                    zmen({ razeni, smer: vychoziSmer(razeni) });
-                  }}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-sm
-                             dark:border-slate-700 dark:bg-slate-950">
-            {/* Když se řadí klikem na hlavičku, musí to jít v seznamu vidět —
-                jinak by ukazoval něco jiného, než co v tabulce platí. */}
-            {p.pokryteSloupci.includes(p.filtr.razeni) && (
-              <option value={p.filtr.razeni}>
-                podle sloupce {nazevRazeni(p.filtr.razeni)}
-              </option>
-            )}
-            {moznostiRazeni(p.pokryteSloupci).map((r) => (
-              <option key={r.id} value={r.id}>{r.nazev}</option>
-            ))}
-          </select>
-        </label>
-
+        {/* Seznam „Seřadit" zrušen 2026-08-06: řadí se klikem na hlavičku
+            sloupce. Míst k údržbě je tím o jedno míň. */}
         <Prepinac zapnuto={p.filtr.jenZiskove} onZmena={(x) => zmen({ jenZiskove: x })}>
           jen ziskové
         </Prepinac>

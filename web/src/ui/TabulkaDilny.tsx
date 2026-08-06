@@ -18,7 +18,9 @@ import {
 } from "../stav/dilna";
 import type { RezimCeny } from "../stav/sken";
 import type { SkladCen } from "../stav/skladCen";
-import { poKliknutiNaSloupec, type NastaveniFiltru, type Razeni } from "../stav/filtrDilny";
+import {
+  poKliknutiNaSloupec, tierZKlice, type NastaveniFiltru, type Razeni,
+} from "../stav/filtrDilny";
 import type { DefiniceSloupce, SloupecId } from "../stav/sloupceDilny";
 import { barvaHodnoty, barvaStari, cislo, procenta, seZnamenkem, stari } from "./format";
 import { OdznakLikvidity, ZnackaFantomu } from "./OdznakLikvidity";
@@ -212,6 +214,27 @@ function Bunka({ sloupec, vysledek, davka, efektivni, override, rozbaleny,
 
     case "marze":
       return v ? <td className={`${trida} ${barvaHodnoty(v.zisk)}`}>{procenta(v.marze)}</td> : prazdno;
+
+    case "ziskNaKus":
+      return v ? <td className={`${trida} ${barvaHodnoty(v.zisk)}`}>{seZnamenkem(v.ziskNaKus)}</td> : prazdno;
+
+    // Zisk na kg a na focus u některých položek neexistuje (nemají váhu,
+    // nevyrábí se s focusem). Prázdno, ne nula — nula by tvrdila, že to
+    // spočítané je a vyšlo nic.
+    case "ziskNaKg":
+      return v?.ziskNaKg != null
+        ? <td className={`${trida} ${barvaHodnoty(v.zisk)}`}>{seZnamenkem(v.ziskNaKg)}</td>
+        : prazdno;
+
+    case "ziskNaFocus":
+      return v?.ziskNaFocus != null
+        ? <td className={`${trida} ${barvaHodnoty(v.zisk)}`}>{seZnamenkem(v.ziskNaFocus)}</td>
+        : prazdno;
+
+    case "tier": {
+      const t = tierZKlice(vysledek.klic);
+      return <td className={trida}>{t === null ? "—" : `T${t}`}</td>;
+    }
 
     case "naklad":
       return v

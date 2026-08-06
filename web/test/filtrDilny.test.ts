@@ -17,8 +17,8 @@ class FalesneUloziste {
 vi.stubGlobal("localStorage", new FalesneUloziste());
 
 const {
-  VYCHOZI_FILTR, dostupneEnchanty, dostupneTiery, enchantZKlice, filtrujARad, moznostiRazeni, poKliknutiNaSloupec,
-  jeFiltrPrazdny, nactiFiltr, tierZKlice, ulozFiltr,
+  VYCHOZI_FILTR, dostupneEnchanty, dostupneTiery, enchantZKlice, filtrujARad,
+  jeFiltrPrazdny, jePlatneRazeni, nactiFiltr, poKliknutiNaSloupec, tierZKlice, ulozFiltr,
 } = await import("../src/stav/filtrDilny");
 
 type Vysledek = import("../src/stav/dilna").VysledekDilny;
@@ -42,8 +42,8 @@ function polozka(klic: string, zisk: number | null, nazev = klic): Vysledek {
       nazev,
       stav: "ok",
       vysledek: {
-        zisk, marze: zisk / 1000, ziskNaKg: zisk / 10, ziskNaFocus: zisk / 100,
-        nakladyCelkem: 1000, pocetVyrobku: 1,
+        zisk, marze: zisk / 1000, ziskNaKus: zisk, ziskNaKg: zisk / 10,
+        ziskNaFocus: zisk / 100, nakladyCelkem: 1000, pocetVyrobku: 1,
       },
     },
   } as unknown as Vysledek;
@@ -121,9 +121,9 @@ describe("řazení", () => {
     polozka("T5_ARMOR#0", 900, "Ccc"),
   ];
 
-  it("ruční pořadí nechá seznam být", () => {
-    expect(filtrujARad(data, filtr({ razeni: "rucni" }), doplnky).zobrazene.map((x) => x.klic))
-      .toEqual(["T4_SWORD#0", "T6_ARMOR#0", "T5_ARMOR#0"]);
+  it("výchozí řazení je podle zisku sestupně — něčím se řadit musí", () => {
+    expect(filtrujARad(data, VYCHOZI_FILTR, doplnky).zobrazene.map((x) => x.klic))
+      .toEqual(["T5_ARMOR#0", "T4_SWORD#0", "T6_ARMOR#0"]);
   });
 
   it("podle zisku — nejvíc nahoře a BEZ CENY až úplně dole", () => {
@@ -162,7 +162,7 @@ describe("kliknutí na sloupec v tabulce", () => {
   });
 
   it("tentýž sloupec podruhé obrátí směr, potřetí zase zpátky", () => {
-    const prvni = poKliknutiNaSloupec(VYCHOZI_FILTR, "zisk");
+    const prvni = poKliknutiNaSloupec({ ...VYCHOZI_FILTR, razeni: "nazev" }, "zisk");
     const druhy = poKliknutiNaSloupec(prvni, "zisk");
     const treti = poKliknutiNaSloupec(druhy, "zisk");
     expect([prvni.smer, druhy.smer, treti.smer])
@@ -211,34 +211,61 @@ describe("obrácené řazení", () => {
   });
 });
 
-describe("seznam Seřadit nabízí jen to, co není na sloupcích", () => {
-  const pokryte = ["nazev", "zisk", "marze", "naklad", "trzba", "likvidita", "stari"] as const;
+describe("metriky, které u některých položek neexistují", () => {
+  /** Položka bez váhy a bez focusu — zisk na kg i na focus chybí. */
+  function bezMetrik(klic: string, zisk: number): Vysledek {
+    nazvy.set(klic, klic);
+    return {
+      klic, mesto: "Caerleon", mistoProdeje: "bm", auto: false,
+      radek: {
+        nazev: klic, stav: "ok",
+        vysledek: {
+          zisk, marze: 0.1, ziskNaKus: zisk, ziskNaKg: null, ziskNaFocus: null,
+          nakladyCelkem: 1000,
+        },
+      },
+    } as unknown as Vysledek;
+  }
 
-  it("zdvojené volby se nenabízejí", () => {
-    const ids = moznostiRazeni([...pokryte]).map((r) => r.id);
-    expect(ids).not.toContain("zisk");
-    expect(ids).not.toContain("marze");
-    expect(ids).not.toContain("nazev");
+  it("chybějící zisk na kg skončí dole, ne jako nula nahoře", () => {
+    const data = [bezMetrik("BEZ#0", 500), polozka("MA#0", 100, "Má")];
+    const v = filtrujARad(data, filtr({ razeni: "ziskNaKg" }), doplnky);
+    expect(v.zobrazene.map((x) => x.klic)).toEqual(["MA#0", "BEZ#0"]);
   });
 
-  it("ruční pořadí zůstává vždycky — jinak by nešlo vrátit vlastní pořadí", () => {
-    expect(moznostiRazeni([...pokryte]).map((r) => r.id)).toContain("rucni");
-    // I v nesmyslném případě, kdy by ho sloupec „pokrýval".
-    expect(moznostiRazeni(["rucni"]).map((r) => r.id)).toContain("rucni");
+  it("totéž u zisku na focus", () => {
+    const data = [bezMetrik("BEZ#0", 500), polozka("MA#0", 100, "Má")];
+    const v = filtrujARad(data, filtr({ razeni: "ziskNaFocus" }), doplnky);
+    expect(v.zobrazene.map((x) => x.klic)).toEqual(["MA#0", "BEZ#0"]);
   });
 
-  it("co na sloupcích není, v seznamu zůstává", () => {
-    const ids = moznostiRazeni([...pokryte]).map((r) => r.id);
-    expect(ids).toEqual(
-      expect.arrayContaining(["rucni", "ziskNaKus", "ziskNaKg", "ziskNaFocus", "tier"]),
-    );
+  it("zisk na kus má každá položka s cenou", () => {
+    const data = [polozka("A#0", 100, "A"), polozka("B#0", 900, "B")];
+    expect(filtrujARad(data, filtr({ razeni: "ziskNaKus" }), doplnky).zobrazene.map((x) => x.klic))
+      .toEqual(["B#0", "A#0"]);
+  });
+});
+
+describe("platná řazení se berou ze sloupců", () => {
+  it("co je sloupec, podle toho jde řadit", () => {
+    expect(jePlatneRazeni("zisk")).toBe(true);
+    expect(jePlatneRazeni("ziskNaFocus")).toBe(true);
+    expect(jePlatneRazeni("tier")).toBe(true);
   });
 
-  it("vypnutí sloupce vrátí jeho řazení do seznamu", () => {
-    // Bez tohohle by po vypnutí sloupce nešlo podle něj řadit vůbec:
-    // hlavička je pryč a seznam ho nenabízel.
-    const bezStari = pokryte.filter((x) => x !== "stari");
-    expect(moznostiRazeni([...bezStari]).map((r) => r.id)).toContain("stari");
+  it("název je platný, i když sloupec není — hlavička Položka je natvrdo", () => {
+    expect(jePlatneRazeni("nazev")).toBe(true);
+  });
+
+  it("zrušené ruční pořadí i nesmysly jsou neplatné", () => {
+    expect(jePlatneRazeni("rucni")).toBe(false);
+    expect(jePlatneRazeni("vymyšlené")).toBe(false);
+    expect(jePlatneRazeni(undefined)).toBe(false);
+  });
+
+  it("sloupce, které se neřadí, platným řazením nejsou", () => {
+    expect(jePlatneRazeni("prodej")).toBe(false);
+    expect(jePlatneRazeni("kdeKam")).toBe(false);
   });
 });
 
@@ -277,12 +304,12 @@ describe("uložení filtru", () => {
 
   it("nesmyslné hodnoty v polích se zahodí, ne aby shodily vykreslení", () => {
     localStorage.setItem("albion:filtr-dilny:v1", JSON.stringify({
-      tiery: "není pole", enchanty: [1, "x"], skupiny: null, razeni: "vymyšlené",
+      tiery: "není pole", enchanty: [1, "x"], skupiny: null, razeni: "rucni",
     }));
     const n = nactiFiltr();
     expect(n.tiery).toEqual([]);
     expect(n.enchanty).toEqual([1]);
     expect(n.skupiny).toEqual([]);
-    expect(n.razeni).toBe("rucni");
+    expect(n.razeni).toBe("zisk");
   });
 });

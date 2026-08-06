@@ -12,17 +12,19 @@
  */
 
 import type { VysledekDilny } from "./dilna";
+import { SLOUPCE } from "./sloupceDilny";
 import { hodnotaMetriky, type Metrika } from "./sken";
 
 /**
- * Podle čeho se řadí.
+ * Podle čeho se řadí. **Vždycky se řadí podle něčeho** — „ruční pořadí"
+ * (tedy pořadí přidání) zrušeno 2026-08-06: nešlo si ho nastavit, takže
+ * to nebylo pořadí uživatele, jen pořadí, jak položky přibývaly.
  *
- * Kromě metrik ze skenu i sloupce, které metrikou nejsou (náklad, tržba,
- * likvidita, stáří) — v tabulce se na ně dá kliknout a uživatel čeká,
- * že to zafunguje.
+ * Každá hodnota odpovídá sloupci v tabulce, na který se dá kliknout.
+ * Jediná výjimka je `nazev` — hlavička „Položka" se vypnout nedá.
  */
 export type Razeni =
-  | "rucni" | Metrika | "nazev" | "tier"
+  | Metrika | "nazev" | "tier"
   | "naklad" | "trzba" | "likvidita" | "stari";
 
 export type Smer = "sestupne" | "vzestupne";
@@ -39,34 +41,15 @@ export function vychoziSmer(r: Razeni): Smer {
     : "sestupne";
 }
 
-export const RAZENI: { id: Razeni; nazev: string }[] = [
-  { id: "rucni", nazev: "Ruční pořadí" },
-  { id: "zisk", nazev: "Zisk celkem" },
-  { id: "marze", nazev: "Marže" },
-  { id: "ziskNaKus", nazev: "Zisk na kus" },
-  { id: "ziskNaKg", nazev: "Zisk na kilogram" },
-  { id: "ziskNaFocus", nazev: "Zisk na focus" },
-  { id: "nazev", nazev: "Název" },
-  { id: "tier", nazev: "Tier" },
-  { id: "naklad", nazev: "Náklad na kus" },
-  { id: "trzba", nazev: "Tržba na kus" },
-  { id: "likvidita", nazev: "Likvidita" },
-  { id: "stari", nazev: "Stáří cen" },
-];
-
 /**
- * Co má smysl nabízet v seznamu „Seřadit".
+ * Platná řazení. **Jediný zdroj pravdy je seznam sloupců** — co je sloupec,
+ * podle toho jde řadit. Dřív tu byl vlastní seznam a udržoval se dvakrát.
  *
- * Sloupce se řadí kliknutím na hlavičku, takže je zbytečné mít je i tady.
- * Seznam ale nesmí zmizet úplně — jsou v něm věci, které na sloupcích
- * nejsou (ruční pořadí, zisk na kus/kg/focus, tier). A když si uživatel
- * sloupec vypne, zmizí i jeho hlavička — pak se jeho řazení do seznamu
- * musí vrátit, jinak by podle něj nešlo řadit vůbec.
- *
- * @param pokryte  řazení, která jsou právě dostupná klikem na hlavičku
+ * `nazev` navíc: hlavička „Položka" je natvrdo, mezi vypínatelnými sloupci
+ * proto není.
  */
-export function moznostiRazeni(pokryte: Razeni[]): { id: Razeni; nazev: string }[] {
-  return RAZENI.filter((r) => r.id === "rucni" || !pokryte.includes(r.id));
+export function jePlatneRazeni(x: unknown): x is Razeni {
+  return x === "nazev" || SLOUPCE.some((s) => s.razeni !== undefined && s.razeni === x);
 }
 
 export interface NastaveniFiltru {
@@ -88,7 +71,8 @@ export const VYCHOZI_FILTR: NastaveniFiltru = {
   tiery: [],
   enchanty: [],
   skupiny: [],
-  razeni: "rucni",
+  // Něčím se řadit musí. Zisk je to, kvůli čemu se do Dílny kouká.
+  razeni: "zisk",
   smer: "sestupne",
 };
 
@@ -219,9 +203,7 @@ export function filtrujARad(
   d: Doplnky,
 ): Vysledek {
   const zobrazene = vysledky.filter((v) => projdeFiltrem(v, f, d));
-  const serazene = f.razeni === "rucni"
-    ? zobrazene
-    : [...zobrazene].sort((a, b) => porovnej(a, b, f, d));
+  const serazene = [...zobrazene].sort((a, b) => porovnej(a, b, f, d));
   return { zobrazene: serazene, skryto: vysledky.length - zobrazene.length };
 }
 
@@ -259,7 +241,8 @@ export function nactiFiltr(): NastaveniFiltru {
       tiery: Array.isArray(d.tiery) ? d.tiery.filter((x) => typeof x === "number") : [],
       enchanty: Array.isArray(d.enchanty) ? d.enchanty.filter((x) => typeof x === "number") : [],
       skupiny: Array.isArray(d.skupiny) ? d.skupiny.filter((x) => typeof x === "string") : [],
-      razeni: RAZENI.some((r) => r.id === d.razeni) ? d.razeni! : "rucni",
+      // Uložené "rucni" ze starších verzí sem spadne taky — převede se na výchozí.
+      razeni: jePlatneRazeni(d.razeni) ? d.razeni : VYCHOZI_FILTR.razeni,
       smer: d.smer === "vzestupne" ? "vzestupne" : "sestupne",
       hledani: typeof d.hledani === "string" ? d.hledani : "",
     };

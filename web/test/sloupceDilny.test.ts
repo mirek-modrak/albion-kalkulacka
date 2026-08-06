@@ -24,9 +24,11 @@ const {
 } = await import("../src/stav/sloupceDilny");
 
 describe("výběr sloupců", () => {
-  it("ve výchozím stavu je vypnuté jen Stáří — u ručních cen je vždy prázdné", () => {
+  it("ve výchozím stavu je vypnuté Stáří a tři metriky navíc", () => {
+    // Stáří je u ručních cen vždycky prázdné; metriky a tier by jen
+    // rozšířily tabulku každému, kdo o ně nestojí.
     falesne.clear();
-    expect(nactiSkryte()).toEqual(["stari"]);
+    expect(nactiSkryte()).toEqual(["stari", "ziskNaKus", "ziskNaKg", "ziskNaFocus", "tier"]);
     expect(viditelne(nactiSkryte()).some((s) => s.id === "stari")).toBe(false);
   });
 

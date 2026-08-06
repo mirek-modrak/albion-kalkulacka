@@ -25,7 +25,7 @@ import { PresetyDilny } from "./PresetyDilny";
 import { skupinaProKategorii } from "../data/kategorie";
 import {
   dostupneEnchanty, dostupneTiery, filtrujARad, nactiFiltr, nactiPohled, ulozFiltr, ulozPohled,
-  type NastaveniFiltru, type Pohled, type Razeni,
+  vychoziSmer, type NastaveniFiltru, type Pohled,
 } from "../stav/filtrDilny";
 import {
   nactiSkryte, prepniSloupec, skryvamePodleCehoRadime, ulozSkryte, viditelne,
@@ -75,22 +75,17 @@ export function TabDilna(p: Props) {
   const [skryteSloupce, setSkryteSloupce] = useState(nactiSkryte);
   const sloupce = useMemo(() => viditelne(skryteSloupce), [skryteSloupce]);
 
-  // Podle čeho se dá řadit klikem na hlavičku. Seznam „Seřadit" tyhle
-  // možnosti nenabízí, aby se nedublovaly — a při vypnutí sloupce se
-  // jeho řazení do seznamu zase vrátí.
-  const pokryteSloupci = useMemo<Razeni[]>(
-    // Název je vždycky: hlavička „Položka" se vypnout nedá.
-    () => ["nazev", ...sloupce.map((s) => s.razeni).filter((r): r is Razeni => !!r)],
-    [sloupce],
-  );
-
   const prepniSloupecUI = (id: SloupecId) => {
-    // Vypnutí sloupce, podle kterého se zrovna řadí, by tabulku seřadilo
-    // podle něčeho neviditelného — vrátíme řazení na ruční pořadí.
-    if (!skryteSloupce.includes(id) && skryvamePodleCehoRadime(id, filtr.razeni)) {
-      zmenFiltr({ ...filtr, razeni: "rucni" });
-    }
     const nove = prepniSloupec(skryteSloupce, id);
+
+    // Vypnutí sloupce, podle kterého se zrovna řadí, by tabulku seřadilo
+    // podle něčeho neviditelného. Přepneme na první zapnutý sloupec, který
+    // řadit umí — a když žádný nezbyde, aspoň na název (ten je natvrdo).
+    if (!skryteSloupce.includes(id) && skryvamePodleCehoRadime(id, filtr.razeni)) {
+      const nahrada = viditelne(nove).find((s) => s.razeni)?.razeni ?? "nazev";
+      zmenFiltr({ ...filtr, razeni: nahrada, smer: vychoziSmer(nahrada) });
+    }
+
     setSkryteSloupce(nove);
     ulozSkryte(nove);
   };
@@ -145,8 +140,7 @@ export function TabDilna(p: Props) {
           <FiltrDilny filtr={filtr} setFiltr={zmenFiltr}
                       tiery={dostupneTiery(p.vysledky)}
                       enchanty={dostupneEnchanty(p.vysledky)}
-                      skryto={skryto} zobrazeno={zobrazene.length}
-                      pokryteSloupci={pokryteSloupci} />
+                      skryto={skryto} zobrazeno={zobrazene.length} />
 
           <VolbaSloupcu skryte={skryteSloupce} prepni={prepniSloupecUI} />
 
