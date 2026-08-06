@@ -10,8 +10,13 @@
 
 import { SKUPINY } from "../data/kategorie";
 import {
-  RAZENI, VYCHOZI_FILTR, jeFiltrPrazdny, vychoziSmer, type NastaveniFiltru, type Razeni,
+  RAZENI, VYCHOZI_FILTR, jeFiltrPrazdny, moznostiRazeni, vychoziSmer,
+  type NastaveniFiltru, type Razeni,
 } from "../stav/filtrDilny";
+
+function nazevRazeni(id: Razeni): string {
+  return RAZENI.find((r) => r.id === id)?.nazev ?? String(id);
+}
 
 interface Props {
   filtr: NastaveniFiltru;
@@ -20,6 +25,8 @@ interface Props {
   enchanty: number[];
   skryto: number;
   zobrazeno: number;
+  /** Řazení dostupná klikem na hlavičku — ta se v seznamu nenabízejí. */
+  pokryteSloupci: Razeni[];
 }
 
 export function FiltrDilny(p: Props) {
@@ -50,7 +57,16 @@ export function FiltrDilny(p: Props) {
                   }}
                   className="rounded-md border border-slate-300 px-2 py-1 text-sm
                              dark:border-slate-700 dark:bg-slate-950">
-            {RAZENI.map((r) => <option key={r.id} value={r.id}>{r.nazev}</option>)}
+            {/* Když se řadí klikem na hlavičku, musí to jít v seznamu vidět —
+                jinak by ukazoval něco jiného, než co v tabulce platí. */}
+            {p.pokryteSloupci.includes(p.filtr.razeni) && (
+              <option value={p.filtr.razeni}>
+                podle sloupce {nazevRazeni(p.filtr.razeni)}
+              </option>
+            )}
+            {moznostiRazeni(p.pokryteSloupci).map((r) => (
+              <option key={r.id} value={r.id}>{r.nazev}</option>
+            ))}
           </select>
         </label>
 

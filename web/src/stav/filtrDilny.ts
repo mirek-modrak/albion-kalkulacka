@@ -54,6 +54,21 @@ export const RAZENI: { id: Razeni; nazev: string }[] = [
   { id: "stari", nazev: "Stáří cen" },
 ];
 
+/**
+ * Co má smysl nabízet v seznamu „Seřadit".
+ *
+ * Sloupce se řadí kliknutím na hlavičku, takže je zbytečné mít je i tady.
+ * Seznam ale nesmí zmizet úplně — jsou v něm věci, které na sloupcích
+ * nejsou (ruční pořadí, zisk na kus/kg/focus, tier). A když si uživatel
+ * sloupec vypne, zmizí i jeho hlavička — pak se jeho řazení do seznamu
+ * musí vrátit, jinak by podle něj nešlo řadit vůbec.
+ *
+ * @param pokryte  řazení, která jsou právě dostupná klikem na hlavičku
+ */
+export function moznostiRazeni(pokryte: Razeni[]): { id: Razeni; nazev: string }[] {
+  return RAZENI.filter((r) => r.id === "rucni" || !pokryte.includes(r.id));
+}
+
 export interface NastaveniFiltru {
   hledani: string;
   jenZiskove: boolean;

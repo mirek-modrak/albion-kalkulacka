@@ -17,7 +17,7 @@ class FalesneUloziste {
 vi.stubGlobal("localStorage", new FalesneUloziste());
 
 const {
-  VYCHOZI_FILTR, dostupneEnchanty, dostupneTiery, enchantZKlice, filtrujARad, poKliknutiNaSloupec,
+  VYCHOZI_FILTR, dostupneEnchanty, dostupneTiery, enchantZKlice, filtrujARad, moznostiRazeni, poKliknutiNaSloupec,
   jeFiltrPrazdny, nactiFiltr, tierZKlice, ulozFiltr,
 } = await import("../src/stav/filtrDilny");
 
@@ -208,6 +208,37 @@ describe("obrácené řazení", () => {
     const dolu = filtrujARad(data, filtr({ razeni: "nazev", smer: "sestupne" }), doplnky);
     expect(vzhuru.zobrazene.map((x) => x.klic)).toEqual(["A#0", "B#0", "C#0"]);
     expect(dolu.zobrazene.map((x) => x.klic)).toEqual(["C#0", "B#0", "A#0"]);
+  });
+});
+
+describe("seznam Seřadit nabízí jen to, co není na sloupcích", () => {
+  const pokryte = ["nazev", "zisk", "marze", "naklad", "trzba", "likvidita", "stari"] as const;
+
+  it("zdvojené volby se nenabízejí", () => {
+    const ids = moznostiRazeni([...pokryte]).map((r) => r.id);
+    expect(ids).not.toContain("zisk");
+    expect(ids).not.toContain("marze");
+    expect(ids).not.toContain("nazev");
+  });
+
+  it("ruční pořadí zůstává vždycky — jinak by nešlo vrátit vlastní pořadí", () => {
+    expect(moznostiRazeni([...pokryte]).map((r) => r.id)).toContain("rucni");
+    // I v nesmyslném případě, kdy by ho sloupec „pokrýval".
+    expect(moznostiRazeni(["rucni"]).map((r) => r.id)).toContain("rucni");
+  });
+
+  it("co na sloupcích není, v seznamu zůstává", () => {
+    const ids = moznostiRazeni([...pokryte]).map((r) => r.id);
+    expect(ids).toEqual(
+      expect.arrayContaining(["rucni", "ziskNaKus", "ziskNaKg", "ziskNaFocus", "tier"]),
+    );
+  });
+
+  it("vypnutí sloupce vrátí jeho řazení do seznamu", () => {
+    // Bez tohohle by po vypnutí sloupce nešlo podle něj řadit vůbec:
+    // hlavička je pryč a seznam ho nenabízel.
+    const bezStari = pokryte.filter((x) => x !== "stari");
+    expect(moznostiRazeni([...bezStari]).map((r) => r.id)).toContain("stari");
   });
 });
 

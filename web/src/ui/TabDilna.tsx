@@ -25,7 +25,7 @@ import { PresetyDilny } from "./PresetyDilny";
 import { skupinaProKategorii } from "../data/kategorie";
 import {
   dostupneEnchanty, dostupneTiery, filtrujARad, nactiFiltr, nactiPohled, ulozFiltr, ulozPohled,
-  type NastaveniFiltru, type Pohled,
+  type NastaveniFiltru, type Pohled, type Razeni,
 } from "../stav/filtrDilny";
 import {
   nactiSkryte, prepniSloupec, skryvamePodleCehoRadime, ulozSkryte, viditelne,
@@ -74,6 +74,15 @@ export function TabDilna(p: Props) {
 
   const [skryteSloupce, setSkryteSloupce] = useState(nactiSkryte);
   const sloupce = useMemo(() => viditelne(skryteSloupce), [skryteSloupce]);
+
+  // Podle čeho se dá řadit klikem na hlavičku. Seznam „Seřadit" tyhle
+  // možnosti nenabízí, aby se nedublovaly — a při vypnutí sloupce se
+  // jeho řazení do seznamu zase vrátí.
+  const pokryteSloupci = useMemo<Razeni[]>(
+    // Název je vždycky: hlavička „Položka" se vypnout nedá.
+    () => ["nazev", ...sloupce.map((s) => s.razeni).filter((r): r is Razeni => !!r)],
+    [sloupce],
+  );
 
   const prepniSloupecUI = (id: SloupecId) => {
     // Vypnutí sloupce, podle kterého se zrovna řadí, by tabulku seřadilo
@@ -136,7 +145,8 @@ export function TabDilna(p: Props) {
           <FiltrDilny filtr={filtr} setFiltr={zmenFiltr}
                       tiery={dostupneTiery(p.vysledky)}
                       enchanty={dostupneEnchanty(p.vysledky)}
-                      skryto={skryto} zobrazeno={zobrazene.length} />
+                      skryto={skryto} zobrazeno={zobrazene.length}
+                      pokryteSloupci={pokryteSloupci} />
 
           <VolbaSloupcu skryte={skryteSloupce} prepni={prepniSloupecUI} />
 
