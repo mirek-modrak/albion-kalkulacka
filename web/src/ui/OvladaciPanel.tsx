@@ -241,7 +241,7 @@ export function OvladaciPanel(p: Props) {
       )}
 
       {/* Řazení, filtr stáří, „jen ziskové" i souhrn se týkají tabulek skenu.
-          Dílna má vlastní karty ve svém pořadí, takže tahle sekce zmizí. */}
+          Dílna má vlastní tabulku s vlastním řazením, takže tahle sekce zmizí. */}
       {!jeDilna && (
         <>
           <hr className="my-4 border-slate-200 dark:border-slate-800" />

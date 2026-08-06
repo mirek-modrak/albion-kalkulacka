@@ -1,14 +1,11 @@
 /**
  * Filtrování a řazení Dílny.
  *
- * Karty se dřív vykreslovaly prostě v pořadí, v jakém je uživatel přidal.
- * U deseti položek to stačí, u padesáti je to stěna, ve které nejde poznat,
+ * Položky se dřív vykreslovaly prostě v pořadí, v jakém je uživatel přidal.
+ * U deseti to stačí, u padesáti je to stěna, ve které nejde poznat,
  * co se vyplatí.
  *
- * Tenhle soubor je schválně bez Reactu — logika se dá otestovat bez klikání
- * a **sdílejí ji oba pohledy** (karty i tabulka). Kdyby ji každý pohled měl
- * vlastní, rozešly by se a porovnávaly by se dvě různě funkční Dílny,
- * ne dva vzhledy.
+ * Tenhle soubor je schválně bez Reactu — logika se dá otestovat bez klikání.
  */
 
 import type { VysledekDilny } from "./dilna";
@@ -248,29 +245,6 @@ export function nactiFiltr(): NastaveniFiltru {
     };
   } catch {
     return VYCHOZI_FILTR;
-  }
-}
-
-// Zvolený pohled (karty / tabulka) — taky jen v prohlížeči. Je to
-// vlastnost zařízení, ne uživatele: na mobilu se hodí něco jiného.
-
-export type Pohled = "karty" | "tabulka";
-
-const KLIC_POHLEDU = "albion:pohled-dilny:v1";
-
-export function nactiPohled(): Pohled {
-  try {
-    return localStorage.getItem(KLIC_POHLEDU) === "tabulka" ? "tabulka" : "karty";
-  } catch {
-    return "karty";
-  }
-}
-
-export function ulozPohled(p: Pohled): void {
-  try {
-    localStorage.setItem(KLIC_POHLEDU, p);
-  } catch {
-    // Nevadí.
   }
 }
 

@@ -2,10 +2,12 @@
  * Dílna — nastavitelné výrobní pracoviště.
  *
  * Kurátorský seznam itemů. Nahoře si nastavíš, kde vyrábíš a kam prodáváš
- * (globálně), u každé karty se to dá přepsat, a hned vidíš, co je nejefektivnější.
- * Vedle je panel cen surovin pro hromadnou ruční editaci.
+ * (globálně), u každé položky se to dá přepsat, a hned vidíš, co je
+ * nejefektivnější. Vedle je panel cen surovin pro hromadnou ruční editaci.
  *
- * Výpočet i detail se přebírají ze skenu; tady je jen výběr, konfigurace a karty.
+ * Seznam vykresluje [TabulkaDilny](./TabulkaDilny.tsx); tady je výběr položek,
+ * konfigurace a filtry. Druhý pohled (karty) byl smazán 2026-08-06 — Mirek si
+ * po vyzkoušení obou vybral tabulku.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -14,18 +16,17 @@ import type { RezimCeny } from "../stav/sken";
 import { MESTA } from "../data/hra";
 import type { SkladCen } from "../stav/skladCen";
 import {
-  AUTO_MESTO, DILNA_MESTO, klicDilny, konfigProKlic,
+  AUTO_MESTO, DILNA_MESTO, klicDilny,
   type KonfigDilny, type PolozkaKatalogu, type StavDilny, type VysledekDilny,
   type ZdrojCen,
 } from "../stav/dilna";
-import { barvaHodnoty, barvaStari, cislo, procenta, seZnamenkem, stari } from "./format";
-import { OdznakLikvidity, ZnackaFantomu } from "./OdznakLikvidity";
+import { cislo } from "./format";
 import { PanelSurovin } from "./PanelSurovin";
 import { PresetyDilny } from "./PresetyDilny";
 import { skupinaProKategorii } from "../data/kategorie";
 import {
-  dostupneEnchanty, dostupneTiery, filtrujARad, nactiFiltr, nactiPohled, ulozFiltr, ulozPohled,
-  vychoziSmer, type NastaveniFiltru, type Pohled,
+  dostupneEnchanty, dostupneTiery, filtrujARad, nactiFiltr, ulozFiltr,
+  vychoziSmer, type NastaveniFiltru,
 } from "../stav/filtrDilny";
 import {
   nactiSkryte, prepniSloupec, skryvamePodleCehoRadime, ulozSkryte, viditelne,
@@ -61,16 +62,6 @@ export function popisKonfigu(k: KonfigDilny): string {
 export function TabDilna(p: Props) {
   const [filtr, setFiltr] = useState(nactiFiltr);
   const zmenFiltr = (f: NastaveniFiltru) => { setFiltr(f); ulozFiltr(f); };
-
-  /**
-   * Pohled na seznam. Mirek si po vyzkoušení vybral tabulku (2026-08-05),
-   * takže je natvrdo — přepínač je pryč.
-   *
-   * Kód karet i `nactiPohled`/`ulozPohled` schválně **zůstávají**: kdyby se
-   * ukázalo, že karty přece jen chybí, je to jednořádkový návrat. Až bude
-   * jisté, že se nevrátí, smaže se `Karta` i tenhle řádek.
-   */
-  const pohled: Pohled = "tabulka";
 
   const [skryteSloupce, setSkryteSloupce] = useState(nactiSkryte);
   const sloupce = useMemo(() => viditelne(skryteSloupce), [skryteSloupce]);
@@ -149,7 +140,7 @@ export function TabDilna(p: Props) {
                             text-sm text-slate-500 dark:border-slate-700">
               Filtru neodpovídá žádná položka.
             </div>
-          ) : pohled === "tabulka" ? (
+          ) : (
             <TabulkaDilny vysledky={zobrazene} stav={p.stav} davka={p.davka}
                           sloupce={sloupce}
                           filtr={filtr} setFiltr={zmenFiltr}
@@ -158,19 +149,6 @@ export function TabDilna(p: Props) {
                           nazevPolozky={p.nazevPolozky}
                           odebrat={odebrat} setOverride={nastavOverride}
                           otevritDetail={p.otevritDetail} />
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {zobrazene.map((v) => (
-                <Karta key={v.klic} vysledek={v}
-                       globalni={p.stav.konfig}
-                       override={p.stav.override[v.klic]}
-                       efektivni={konfigProKlic(p.stav, v.klic)}
-                       davka={p.davka} nazevPolozky={p.nazevPolozky}
-                       odebrat={() => odebrat(v.klic)}
-                       setOverride={(k) => nastavOverride(v.klic, k)}
-                       otevritDetail={() => p.otevritDetail(v.klic)} />
-              ))}
-            </div>
           )}
         </>
       )}
@@ -218,7 +196,7 @@ function GlobalniNastaveni({ konfig, setKonfig, zdroj, setZdroj, presety }: {
         <div className="ml-auto">{presety}</div>
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        Platí pro všechny itemy; u karty se dá přepsat.
+        Platí pro všechny itemy; u položky se dá přepsat.
         {konfig.mesto === AUTO_MESTO
           && " Nejlevnější projede všechna města a vybere to s nejvyšším ziskem."}
         {zdroj === "historie"
@@ -371,107 +349,6 @@ export function NastaveniPolozky({ efektivni, globalni, override, setOverride }:
           zpět na globální ({popisKonfigu(globalni)})
         </button>
       )}
-    </div>
-  );
-}
-
-// ── Karta položky ──────────────────────────────────────────────
-
-function Karta({ vysledek, globalni, override, efektivni, davka, nazevPolozky,
-                 odebrat, setOverride, otevritDetail }: {
-  vysledek: VysledekDilny;
-  globalni: KonfigDilny;
-  override: KonfigDilny | undefined;
-  efektivni: KonfigDilny;
-  davka: number;
-  nazevPolozky: (zaklad: string, enchant: number) => string;
-  odebrat: () => void;
-  setOverride: (k: KonfigDilny | null) => void;
-  otevritDetail: () => void;
-}) {
-  const [rozbaleno, setRozbaleno] = useState(false);
-  const [zaklad, e] = vysledek.klic.split("#");
-  const nazev = vysledek.radek?.nazev ?? nazevPolozky(zaklad ?? "", Number(e ?? 0));
-  const v = vysledek.radek?.vysledek ?? null;
-  // U „nejlevnější" ukázat vybrané město; jinak nastavenou konfiguraci.
-  const kdeKam = efektivni.mesto === AUTO_MESTO
-    ? `${vysledek.mesto} → ${efektivni.naBM ? "BM" : "místní"} · nejlevnější`
-    : popisKonfigu(efektivni);
-
-  return (
-    <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-      <div className="mb-1 flex items-start justify-between gap-2">
-        <button onClick={otevritDetail}
-                className="text-left font-medium hover:underline">{nazev}</button>
-        <button onClick={odebrat} title="Odebrat ze seznamu"
-                className="shrink-0 rounded px-1.5 text-slate-400 hover:bg-slate-100
-                           dark:hover:bg-slate-800">✕</button>
-      </div>
-
-      <button onClick={() => setRozbaleno((x) => !x)}
-              className={`mb-2 text-xs ${override
-                ? "font-semibold text-amber-600 dark:text-amber-400"
-                : "text-slate-500"}`}
-              title="Změnit nastavení jen pro tuhle položku">
-        🔧 {kdeKam} {rozbaleno ? "▾" : "▸"}{override && " · vlastní"}
-      </button>
-
-      {rozbaleno && (
-        <div className="mb-2 rounded-md bg-slate-50 p-2 dark:bg-slate-950/60">
-          <NastaveniPolozky efektivni={efektivni} globalni={globalni}
-                            override={override} setOverride={setOverride} />
-        </div>
-      )}
-
-      {v ? (
-        <>
-          <div className="mb-2 flex items-baseline justify-between">
-            <span className="text-xs text-slate-500">Zisk / {cislo(davka)} ks</span>
-            <span className={`text-lg font-bold ${barvaHodnoty(v.zisk)}`}>{seZnamenkem(v.zisk)}</span>
-          </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            <RadekU popis="Marže" hodnota={procenta(v.marze)} kladne={v.zisk >= 0} />
-            <RadekU popis="Náklad / ks" hodnota={cislo(v.nakladyCelkem / Math.max(1, davka), 0)} />
-            <RadekU popis={efektivni.naBM ? "Výkup BM / ks" : "Tržba / ks"}
-                    hodnota={cislo(v.trzbaHruba / Math.max(1, davka), 0)} />
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xs text-slate-500">Likvidita</span>
-              <OdznakLikvidity likvidita={vysledek.radek?.likvidita ?? null} davka={davka} />
-            </div>
-          </div>
-          <div className="mt-2 flex items-center gap-2 text-xs">
-            <ZnackaFantomu likvidita={vysledek.radek?.likvidita ?? null} />
-            {vysledek.radek?.stav === "podezrele" && (
-              <span className="text-amber-600 dark:text-amber-400">podezřelá marže</span>
-            )}
-            {vysledek.radek?.stariHodin != null && (
-              <span className={`ml-auto ${barvaStari(vysledek.radek.stariHodin)}`}>
-                {stari(vysledek.radek.stariHodin)}
-              </span>
-            )}
-          </div>
-        </>
-      ) : (
-        <p className="text-sm text-slate-500">
-          {vysledek.radek?.chybejici?.length
-            ? <>Chybí cena: {vysledek.radek.chybejici.join(", ")}. Stáhni ceny nebo doplň níž.</>
-            : <>Zatím bez ceny — klikni na „Stáhnout ceny" nebo doplň v panelu surovin.</>}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function RadekU({ popis, hodnota, kladne }: {
-  popis: string; hodnota: string; kladne?: boolean;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-xs text-slate-500">{popis}</span>
-      <span className={`font-semibold ${kladne === undefined ? ""
-        : kladne ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
-        {hodnota}
-      </span>
     </div>
   );
 }

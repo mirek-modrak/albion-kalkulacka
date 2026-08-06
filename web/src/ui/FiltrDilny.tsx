@@ -1,9 +1,6 @@
 /**
  * Lišta filtrů a řazení nad seznamem v Dílně.
  *
- * Společná pro oba pohledy (karty i tabulka) — kdyby ji každý měl vlastní,
- * porovnávaly by se dvě různě funkční Dílny, ne dva vzhledy.
- *
  * Počítadlo skrytých položek je tu schválně vidět vždy, když filtr něco
  * schovává: bez něj vypadá právě přidaná položka jako ztracená.
  */
