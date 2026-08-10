@@ -7,6 +7,7 @@ import {
   type Metrika, type NastaveniSkenu,
 } from "../stav/sken";
 import type { StavSkenu } from "../App";
+import { MIMO_KRALOVSKY_KONTINENT } from "../stav/nastaveni";
 import type { NastaveniGlobalni, NastaveniKarty } from "../stav/nastaveni";
 
 interface Props {
@@ -54,6 +55,95 @@ interface Props {
 const stylPole =
   "w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm " +
   "dark:border-slate-700 dark:bg-slate-950";
+
+/**
+ * Kam jsem ochoten jezdit.
+ *
+ * Vzniklo z Mirkova postřehu (2026-08-10): v nejlepších prodejích logicky
+ * vycházejí Caerleon a Brecilien, jenže do prvního se jede černou zónou
+ * a do druhého přes Roads of Avalon. Karta počítá se silverem, ne s tím,
+ * jestli tam náklad dojede.
+ *
+ * Seznam, ne jeden přepínač „jen královská": dneska chce vyřadit dvě
+ * města, zítra může chtít vyřadit Fort Sterling, kam prostě nejezdí.
+ * Rychlá volba to zkracuje na jedno kliknutí.
+ */
+function VyberMest({ globalni, setGlobalni, rezim }: {
+  globalni: NastaveniGlobalni;
+  setGlobalni: (g: NastaveniGlobalni) => void;
+  rezim: string;
+}) {
+  const zakazana = new Set(globalni.zakazanaMesta ?? []);
+  const vsechna = MESTA.map((m) => m.nazev);
+  const povolenych = vsechna.length - zakazana.size;
+
+  const prepni = (mesto: string) => {
+    const nova = new Set(zakazana);
+    if (nova.has(mesto)) nova.delete(mesto);
+    else nova.add(mesto);
+    setGlobalni({ ...globalni, zakazanaMesta: [...nova] });
+  };
+
+  const jenKralovska = vsechna.filter((m) => MIMO_KRALOVSKY_KONTINENT.includes(m));
+  const uzJenKralovska = jenKralovska.every((m) => zakazana.has(m))
+    && vsechna.filter((m) => !MIMO_KRALOVSKY_KONTINENT.includes(m))
+      .every((m) => !zakazana.has(m));
+
+  return (
+    <>
+      <Popisek>
+        Kam jsem ochoten jezdit
+        {povolenych === 0 && (
+          <span className="text-red-600 dark:text-red-400"> · žádné město!</span>
+        )}
+      </Popisek>
+
+      <div className="flex flex-wrap gap-1">
+        {vsechna.map((m) => {
+          const povoleno = !zakazana.has(m);
+          const rizikove = MIMO_KRALOVSKY_KONTINENT.includes(m);
+          return (
+            <button key={m} onClick={() => prepni(m)}
+                    title={rizikove
+                      ? `${m} — mimo královský kontinent, převoz není bezpečný`
+                      : m}
+                    className={`rounded px-1.5 py-0.5 text-xs ${povoleno
+                      ? "bg-blue-600 font-semibold text-white"
+                      : "border border-slate-300 text-slate-400 line-through dark:border-slate-700"}`}>
+              {m}{rizikove && " ⚠"}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-1 flex gap-2 text-xs">
+        {!uzJenKralovska && (
+          <button className="text-blue-600 underline dark:text-blue-400"
+                  onClick={() => setGlobalni({
+                    ...globalni, zakazanaMesta: [...MIMO_KRALOVSKY_KONTINENT],
+                  })}>
+            jen královská
+          </button>
+        )}
+        {zakazana.size > 0 && (
+          <button className="text-slate-500 underline"
+                  onClick={() => setGlobalni({ ...globalni, zakazanaMesta: [] })}>
+            všechna
+          </button>
+        )}
+      </div>
+
+      <p className="mt-1 text-xs text-slate-500">
+        {povolenych === 0
+          ? "Bez vybraného města nemá aplikace z čeho vybírat — zapni aspoň jedno."
+          : zakazana.size > 0
+            ? `Vyřazená města ${rezim === "refining" ? "karta" : "sken"} sama nenavrhne. `
+              + "Ručně nastavené město platí dál."
+            : "Caerleon leží v černé zóně, Brecilien v Roads of Avalon."}
+      </p>
+    </>
+  );
+}
 
 function Popisek({ children }: { children: React.ReactNode }) {
   return <div className="mb-1 mt-3 text-xs text-slate-500 dark:text-slate-400">{children}</div>;
@@ -242,6 +332,13 @@ export function OvladaciPanel(p: Props) {
             v Caerleonu riziko nemá — odtud se nikam nejede.
           </p>
         </>
+      )}
+
+      {/* Kam jsem ochoten jezdit. Jen tam, kde aplikace město sama vybírá —
+          u skenu jednoho města a u převozu si ho volíš ručně, takže by to
+          byl ovladač bez účinku. */}
+      {(p.rezim === "refining" || p.rezim === "prilezitosti") && (
+        <VyberMest globalni={p.globalni} setGlobalni={p.setGlobalni} rezim={p.rezim} />
       )}
 
       {p.stanice && <div className="mt-3">{p.stanice}</div>}

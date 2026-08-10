@@ -38,7 +38,7 @@ import { Prihlaseni } from "./ui/Prihlaseni";
 import type { Uzivatel } from "./stav/sync";
 import { nactiPredvolby, ulozPredvolby, type Rezim } from "./stav/predvolby";
 import {
-  nactiNastaveni, ulozNastaveni,
+  nactiNastaveni, povolenaMesta, ulozNastaveni,
   type NastaveniAplikace, type NastaveniGlobalni, type NastaveniKarty,
 } from "./stav/nastaveni";
 import { PanelStanic } from "./ui/PanelStanic";
@@ -364,17 +364,25 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
     [rezim, nastaveniKarty, verzeCen, dilna, dilnaKombinace],
   );
 
+  // Města, ze kterých smí automatický výběr vybírat. Caerleon a Brecilien
+  // se dají vyloučit — karta počítá se silverem, ne s tím, jestli se tam
+  // náklad dostane.
+  const mestaProAuto = useMemo(
+    () => povolenaMesta(nastaveniApp.globalni, MESTA.map((m) => m.nazev)),
+    [nastaveniApp.globalni],
+  );
+
   // Refining: každá surovina pod svou trojicí měst. Naměřeno 2026-08-10:
   // nejhorší případ (115 surovin × 7 měst refiningu × 7 měst nákupu)
   // stojí 23 ms, takže strop na počet řádků není potřeba.
   const refiningVysledky = useMemo(
     () => rezim !== "refining" ? [] : vyhodnotitRefining(
       refining, skladRef.current, historieRef.current, HRA.konstanty, nastaveniKarty,
-      nazevPolozky, nastaveniPrevozu.nosnostKg, maxStari,
+      nazevPolozky, nastaveniPrevozu.nosnostKg, maxStari, mestaProAuto,
     ),
     // maxStari je v závislostech schválně: řídí, které ceny smí auto-výběr
     // použít, takže jeho změna musí přepočítat, ne jen přefiltrovat.
-    [rezim, nastaveniKarty, verzeCen, refining, refiningKombinace,
+    [rezim, nastaveniKarty, verzeCen, refining, refiningKombinace, mestaProAuto,
       nastaveniPrevozu.nosnostKg, maxStari],
   );
 

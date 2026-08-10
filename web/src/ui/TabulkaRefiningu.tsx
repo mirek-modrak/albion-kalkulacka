@@ -211,6 +211,15 @@ function Bunka({ sloupec, vysledek, davka, efektivni, override, rozbaleny,
               ≈ {vysledek.tesnyVitez.refining}
             </div>
           )}
+          {/* Vyřadit město je legitimní volba — ale bez čísla je slepá.
+              Takhle jde kdykoli přehodnotit, jestli se to pořád vyplácí. */}
+          {vysledek.usloTi && (
+            <div className="text-[11px] text-amber-600 dark:text-amber-400"
+                 title={`${vysledek.usloTi.mesto} je vyřazený z automatického výběru`}>
+              ⚠ {vysledek.usloTi.mesto} by dal {seZnamenkem(vysledek.usloTi.zisk)}
+              {" "}({procenta(vysledek.usloTi.oKolik, 0)} víc)
+            </div>
+          )}
         </td>
       );
     }

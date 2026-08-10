@@ -242,6 +242,14 @@ export interface VysledekRefiningu {
    * a uživatel by kvůli desetině procenta jel přes půl mapy.
    */
   tesnyVitez: { refining: string; zisk: number } | null;
+  /**
+   * O co tě připravilo vyloučení měst.
+   *
+   * Vyřadit Caerleon je legitimní volba — ale bez čísla je to volba slepá
+   * a za měsíc už nepoznáš, jestli se ti pořád vyplácí. Null znamená buď
+   * „nic není vyloučené", nebo „vyloučená města by stejně nebyla lepší".
+   */
+  usloTi: { mesto: string; zisk: number; oKolik: number } | null;
   /** Koupit nižší tier, nebo si ho refinovat? Null, když nejde určit. */
   nizsiTier: UzelRetezce | null;
   /** Jízdy mountem. Null = jede se nikam, města se shodují. */
@@ -262,6 +270,8 @@ interface Kontext {
   nosnostKg: number;
   /** Hodiny; 0 = bez omezení. Auto-výběr starší ceny přeskočí. */
   maxStari: number;
+  /** Města, ze kterých smí automatický výběr vybírat. */
+  mesta: string[];
 }
 
 const NAZVY_MEST = MESTA.map((m) => m.nazev);
@@ -322,7 +332,7 @@ function jeCenaStara(cena: Cena, maxStari: number): boolean {
  * bez nich by řádek hlásil „chybí cena" u toho, co se prodává.
  */
 function skladPoVstupech(
-  komb: Kombinace, k: Kontext, mestaProdeje: string[],
+  komb: Kombinace, k: Kontext, mestaProdeje: string[], mestaNakupu: string[],
 ): { sklad: SkladCen; kde: Map<string, string> } {
   const s = new SkladCen();
   const kde = new Map<string, string>();
@@ -330,7 +340,9 @@ function skladPoVstupech(
   const varianta = varianta0(komb);
   for (const vstup of varianta?.vstupy ?? []) {
     let nej: { cena: Cena; mesto: string } | null = null;
-    for (const m of NAZVY_MEST) {
+    // Jen povolená města — jinak by „nejlevněji po vstupech" poslalo
+    // uživatele nakoupit do Caerleonu, který si zrovna vyloučil.
+    for (const m of mestaNakupu) {
       const c = k.sklad.ziskej(m, vstup.zaklad, vstup.enchant, k.typNakup);
       if (!c || !(c.hodnota > 0) || jeCenaStara(c, k.maxStari)) continue;
       if (!nej || c.hodnota < nej.cena.hodnota) nej = { cena: c, mesto: m };
@@ -397,6 +409,11 @@ export function vyhodnotitRefining(
   nazevPolozky: (zaklad: string, enchant: number) => string,
   nosnostKg: number,
   maxStari: number,
+  /**
+   * Města, ze kterých smí automatický výběr vybírat. Chybí = všechna.
+   * Ruční volba města tím omezená není.
+   */
+  mesta: string[] = NAZVY_MEST,
 ): VysledekRefiningu[] {
   const kombinace = kombinaceZKlicuRefiningu(stav.klice);
   const podleKlice = new Map<string, Kombinace>();
@@ -413,6 +430,9 @@ export function vyhodnotitRefining(
     typNakup: typProNakup(nastaveni.rezimNakupu),
     typProdej: typProProdej(nastaveni.rezimProdeje),
     nosnostKg, maxStari,
+    // Prázdný seznam by znamenal, že se nedá vybrat nic. Karta na to
+    // upozorní sama; tady se nic nepředstírá.
+    mesta,
   };
 
   return stav.klice.map((klic) => {
@@ -429,31 +449,48 @@ function prazdnyVysledek(klic: string, konfig: KonfigRefiningu): VysledekRefinin
     nakup: jeAutoNakup(konfig) ? NAKUP_RUZNA_MESTA : konfig.nakup,
     refining: jeAutoRefining(konfig) ? (MESTA[0]?.nazev ?? "") : konfig.refining,
     prodej: jeAutoProdej(konfig) ? (MESTA[0]?.nazev ?? "") : konfig.prodej,
-    vstupy: [], radek: null, tesnyVitez: null, nizsiTier: null,
+    vstupy: [], radek: null, tesnyVitez: null, usloTi: null, nizsiTier: null,
     jizdDoRefiningu: null, jizdDoProdeje: null,
   };
 }
 
-function vyhodnotJednu(
-  klic: string, komb: Kombinace, konfig: KonfigRefiningu, k: Kontext,
-): VysledekRefiningu {
-  // ── Kandidáti na jednotlivé kroky ────────────────────────────
-  const mestaRefiningu = kandidatiRefiningu(komb, konfig);
-  const mestaProdeje = jeAutoProdej(konfig) ? NAZVY_MEST : [konfig.prodej];
+interface Nalez {
+  vitez: { radek: RadekSkenu | null; nakup: string; refining: string; prodej: string };
+  druhy: { refining: string; zisk: number } | null;
+  /** Sklad, ve kterém se počítalo — u nákupu po vstupech je dočasný. */
+  sklad: SkladCen;
+  kde: Map<string, string> | undefined;
+  /** Zisk vítěze, nebo null když se nedal spočítat. */
+  zisk: number | null;
+}
+
+/**
+ * Projde povolená města a najde nejlepší trojici.
+ *
+ * Vytažené z `vyhodnotJednu` ven, aby šlo pustit dvakrát: jednou nad
+ * povolenými městy a jednou nad všemi. Z rozdílu se pak dá říct, o co
+ * uživatele vyloučení Caerleonu připravilo.
+ */
+function najdiNejlepsi(
+  komb: Kombinace, konfig: KonfigRefiningu, k: Kontext, mesta: string[],
+): Nalez | null {
+  const mestaRefiningu = kandidatiRefiningu(komb, konfig, mesta);
+  const mestaProdeje = jeAutoProdej(konfig) ? mesta : [konfig.prodej];
+  if (mestaRefiningu.length === 0 || mestaProdeje.length === 0) return null;
 
   // Nákup po vstupech běží přes dočasný sklad, jinak se prochází města.
   const poVstupech = jeAutoNakup(konfig) && !konfig.jednoNakupniMesto
-    ? skladPoVstupech(komb, k, mestaProdeje)
+    ? skladPoVstupech(komb, k, mestaProdeje, mesta)
     : null;
   const mestaNakupu = poVstupech
     ? [NAKUP_RUZNA_MESTA]
-    : jeAutoNakup(konfig) ? NAZVY_MEST : [konfig.nakup];
+    : jeAutoNakup(konfig) ? mesta : [konfig.nakup];
+  if (mestaNakupu.length === 0) return null;
   const sklad = poVstupech?.sklad ?? k.sklad;
 
-  // ── Nejlepší trojice ─────────────────────────────────────────
   let nej: { radek: RadekSkenu; nakup: string; refining: string; prodej: string } | null = null;
   let druhy: { refining: string; zisk: number } | null = null;
-  let zaloha: { radek: RadekSkenu | null; nakup: string; refining: string; prodej: string } | null = null;
+  let zaloha: Nalez["vitez"] | null = null;
 
   for (const refining of mestaRefiningu) {
     const prodej = nejlepsiProdej(komb, refining, mestaProdeje, k, konfig.ztrataDoProdeje);
@@ -479,24 +516,68 @@ function vyhodnotJednu(
   }
 
   const vitez = nej ?? zaloha;
-  if (!vitez) return prazdnyVysledek(klic, konfig);
+  if (!vitez) return null;
 
-  // ── Odvozené údaje ───────────────────────────────────────────
+  return {
+    vitez, druhy, sklad, kde: poVstupech?.kde,
+    zisk: nej?.radek.vysledek?.zisk ?? null,
+  };
+}
+
+function vyhodnotJednu(
+  klic: string, komb: Kombinace, konfig: KonfigRefiningu, k: Kontext,
+): VysledekRefiningu {
+  const nalez = najdiNejlepsi(komb, konfig, k, k.mesta);
+  if (!nalez) return prazdnyVysledek(klic, konfig);
+
+  const { vitez, druhy, sklad } = nalez;
   const radek = vitez.radek;
   const vysledek = radek?.vysledek ?? null;
 
-  const tesnyVitez = nej && druhy && jeTesne(nej.radek.vysledek!.zisk, druhy.zisk)
+  const tesnyVitez = nalez.zisk !== null && druhy && jeTesne(nalez.zisk, druhy.zisk)
     ? druhy
     : null;
+
+  // ── O co tě připravilo vyloučení měst ────────────────────────
+  //
+  // Druhý průchod se pouští jen když je něco vyloučené — jinak by se
+  // práce zdvojnásobila pro nic. Porovnává se zisk vítězů; hlásí se jen
+  // tehdy, když vyloučené město opravdu vede a vede o něco znatelného.
+  let usloTi: VysledekRefiningu["usloTi"] = null;
+  if (k.mesta.length < NAZVY_MEST.length && nalez.zisk !== null) {
+    const bezOmezeni = najdiNejlepsi(komb, konfig, k, NAZVY_MEST);
+    const jinyZisk = bezOmezeni?.zisk ?? null;
+
+    // Vyloučené město může vylepšit KTERÝKOLI ze tří kroků, ne jen
+    // refining — typicky právě prodej, protože Caerleon platí nejvíc.
+    // Dívat se jen na město výroby znamenalo, že se nejčastější případ
+    // vůbec neohlásil.
+    const povolena = new Set(k.mesta);
+    const vylouceneKroky = bezOmezeni
+      ? [bezOmezeni.vitez.nakup, bezOmezeni.vitez.refining, bezOmezeni.vitez.prodej]
+        .filter((m) => m !== NAKUP_RUZNA_MESTA && !povolena.has(m))
+      : [];
+
+    if (jinyZisk !== null && vylouceneKroky.length > 0 && jinyZisk > nalez.zisk) {
+      usloTi = {
+        // Když jich je víc, stačí jmenovat jedno — uživateli jde o to,
+        // že mu vyřazení něco bere, ne o přesný seznam.
+        mesto: vylouceneKroky[0]!,
+        zisk: jinyZisk,
+        oKolik: nalez.zisk === 0 ? 1 : (jinyZisk - nalez.zisk) / Math.abs(nalez.zisk),
+      };
+    }
+  }
 
   return {
     klic,
     nakup: vitez.nakup,
     refining: vitez.refining,
     prodej: vitez.prodej,
-    vstupy: nakupniSeznam(komb, radek, vitez.nakup, poVstupech?.kde, k, sklad),
+    vstupy: nakupniSeznam(komb, radek, vitez.nakup, nalez.kde, k, sklad),
     radek,
     tesnyVitez,
+    usloTi,
     nizsiTier: retezecNizsihoTieru(komb, vitez.refining, vitez.nakup, k, sklad),
     // Jízdy jen tam, kde se opravdu jede. Vrácené suroviny vznikají až
     // u stanice, proto `vahaNakupu` a ne `vahaVstupu` — jinak by karta
@@ -527,15 +608,22 @@ function jizd(kg: number, nosnostKg: number): number | null {
   return Math.ceil(kg / nosnostKg);
 }
 
-function kandidatiRefiningu(komb: Kombinace, konfig: KonfigRefiningu): string[] {
-  if (konfig.refining === REFINING_NEJV_ZISK) return NAZVY_MEST;
+function kandidatiRefiningu(
+  komb: Kombinace, konfig: KonfigRefiningu, mesta: string[],
+): string[] {
+  if (konfig.refining === REFINING_NEJV_ZISK) return mesta;
   if (konfig.refining === REFINING_NEJL_BONUS) {
     // Jedno město, spočítané z dat. Když bonus nemá nikdo (nemělo by
     // nastat), spadne se na projetí všech — radši dražší výpočet
     // než prázdný řádek.
     const s = mestoSBonusem(komb.polozka.kategorie);
-    return s ? [s] : NAZVY_MEST;
+    // Když je město s bonusem vyloučené, nelze ho tiše použít — vrátí se
+    // povolená města a vybere se z nich to nejvýhodnější.
+    if (s) return mesta.includes(s) ? [s] : mesta;
+    return mesta;
   }
+  // Ruční volba platí VŽDY, i pro vyloučené město. Vyloučení znamená
+  // „nenabízej mi to sám", ne „zakaž to".
   return [konfig.refining];
 }
 

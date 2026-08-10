@@ -16,6 +16,7 @@ import {
   type KonfigRefiningu, type StavRefiningu,
 } from "../src/stav/refining";
 import { SkladCen } from "../src/stav/skladCen";
+import type { StavRefiningu as _StavRefiningu } from "../src/stav/refining";
 import { HRA } from "../src/data/hra";
 import type { NastaveniSkenu } from "../src/stav/sken";
 import { SUROVINY_ID } from "../src/data/kategorie";
@@ -232,6 +233,101 @@ describe("kde prodat", () => {
     const v = vyhodnot(stav({ prodej: PRODEJ_NEJLEPSI }), s)[0]!;
     expect(v.prodej).not.toBe("Black Market");
     expect(v.radek!.vysledek!.trzbaHruba).toBe(2000 * 100);
+  });
+});
+
+describe("vyloučená města", () => {
+  const KRALOVSKA = ["Thetford", "Lymhurst", "Bridgewatch", "Martlock", "Fort Sterling"];
+
+  /** Caerleon platí za ingot nejvíc — přesně situace, kterou Mirek popsal. */
+  const sCaerleonem = () =>
+    sklad((x) => x.ulozRucne("Caerleon", "T5_METALBAR", 0, "buy_max", 9000));
+
+  const vyhodnotS = (st: StavRefiningu, sk: SkladCen, mesta: string[]) =>
+    vyhodnotitRefining(st, sk, undefined, HRA.konstanty, NASTAVENI, nazev, 4116, 0, mesta);
+
+  it("bez omezení vyhraje Caerleon", () => {
+    const v = vyhodnot(stav({ prodej: PRODEJ_NEJLEPSI }), sCaerleonem())[0]!;
+    expect(v.prodej).toBe("Caerleon");
+  });
+
+  it("po vyřazení ho automatický výběr NENAVRHNE", () => {
+    const v = vyhodnotS(stav({ prodej: PRODEJ_NEJLEPSI }), sCaerleonem(), KRALOVSKA)[0]!;
+    expect(v.prodej).not.toBe("Caerleon");
+    expect(KRALOVSKA).toContain(v.prodej);
+  });
+
+  it("vyřazení se týká i refiningu a nákupu, nejen prodeje", () => {
+    const s = sklad((x) => {
+      x.ulozRucne("Caerleon", "T5_ORE", 0, "sell_min", 1);
+      x.ulozRucne("Caerleon", "T4_METALBAR", 0, "sell_min", 1);
+    });
+    const v = vyhodnotS(
+      stav({ nakup: NAKUP_NEJLEVNEJI, refining: REFINING_NEJV_ZISK }), s, KRALOVSKA,
+    )[0]!;
+    expect(v.nakup).not.toBe("Caerleon");
+    expect(v.refining).not.toBe("Caerleon");
+  });
+
+  it("nákup po vstupech taky respektuje vyřazení", () => {
+    // Jinak by „nejlevněji po vstupech" poslalo hráče nakoupit tam,
+    // kam si zrovna zakázal jezdit.
+    const s = sklad((x) => {
+      x.ulozRucne("Caerleon", "T5_ORE", 0, "sell_min", 1);
+      x.ulozRucne("Caerleon", "T4_METALBAR", 0, "sell_min", 1);
+    });
+    const v = vyhodnotS(
+      stav({ nakup: NAKUP_NEJLEVNEJI, jednoNakupniMesto: false }), s, KRALOVSKA,
+    )[0]!;
+    expect(v.vstupy.every((x) => x.mesto !== "Caerleon")).toBe(true);
+  });
+
+  it("RUČNÍ volba vyřazeného města platí dál", () => {
+    // Vyřazení znamená „nenabízej mi to sám", ne „zakaž to". Kdyby to
+    // přebilo i ruční volbu, uživatel by nastavil město a nic by se nestalo.
+    const v = vyhodnotS(
+      stav({ refining: "Caerleon", prodej: "Caerleon" }), sCaerleonem(), KRALOVSKA,
+    )[0]!;
+    expect(v.refining).toBe("Caerleon");
+    expect(v.prodej).toBe("Caerleon");
+  });
+
+  it("řekne, o kolik tě vyřazení připravilo", () => {
+    const v = vyhodnotS(stav({ prodej: PRODEJ_NEJLEPSI }), sCaerleonem(), KRALOVSKA)[0]!;
+    expect(v.usloTi).not.toBeNull();
+    expect(v.usloTi!.mesto).toBe("Caerleon");
+    expect(v.usloTi!.zisk).toBeGreaterThan(v.radek!.vysledek!.zisk);
+    expect(v.usloTi!.oKolik).toBeGreaterThan(0);
+  });
+
+  it("když vyřazené město NEBYLO lepší, nic se nehlásí", () => {
+    // Jinak by karta otravovala u každého řádku bez ohledu na to,
+    // jestli se tam vůbec vyplatí jet.
+    const v = vyhodnotS(stav({ prodej: PRODEJ_NEJLEPSI }), sklad(), KRALOVSKA)[0]!;
+    expect(v.usloTi).toBeNull();
+  });
+
+  it("bez vyřazení se druhý průchod nedělá a nic se nehlásí", () => {
+    const v = vyhodnot(stav({ prodej: PRODEJ_NEJLEPSI }), sCaerleonem())[0]!;
+    expect(v.usloTi).toBeNull();
+  });
+
+  it("prázdný seznam měst nespadne, jen nic nespočítá", () => {
+    // Uživatel může odškrtnout všechno. Karta na to upozorní,
+    // ale nesmí spadnout ani tiše použít vyřazené město.
+    const v = vyhodnotS(stav({ prodej: PRODEJ_NEJLEPSI }), sCaerleonem(), [])[0]!;
+    expect(v.radek?.vysledek ?? null).toBeNull();
+  });
+
+  it("vyřazení města s bonusem nepošle refining tam, kam nesmí", () => {
+    // Thetford má bonus na rudu. Když ho vyřadím, „nejlepší bonus"
+    // ho nesmí použít potají.
+    const bezThetfordu = KRALOVSKA.filter((m) => m !== "Thetford");
+    const v = vyhodnotS(
+      stav({ refining: REFINING_NEJL_BONUS }), sklad(), bezThetfordu,
+    )[0]!;
+    expect(v.refining).not.toBe("Thetford");
+    expect(bezThetfordu).toContain(v.refining);
   });
 });
 

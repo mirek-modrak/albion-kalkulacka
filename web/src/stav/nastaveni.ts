@@ -39,7 +39,34 @@ export interface NastaveniGlobalni {
   premium: boolean;
   /** 0, 10 (silver day) nebo 20 (gold day). */
   denniBonus: number;
+  /**
+   * Města, která **automatický výběr nesmí navrhnout**.
+   *
+   * Karta počítá se silverem, ne s tím, jestli se tam vůbec dostaneš.
+   * Caerleon leží v černé zóně a Brecilien v Roads of Avalon, takže
+   * v nejlepších prodejích vycházejí často — a přitom tam náklad
+   * nemusí dojet. Precedent: `JE_RISKANTNI` v [prevoz.ts](./prevoz.ts).
+   *
+   * **Netýká se ručního výběru.** Kdo si vědomě nastaví „prodávám
+   * v Caerleonu", tomu se to spočítá; tenhle seznam znamená „nenabízej
+   * mi to sám", ne „zakaž to".
+   *
+   * Ukládá se seznam ZAKÁZANÝCH, ne povolených: prázdné pole pak
+   * jednoznačně znamená „nic nevynechávej" a město přidané v budoucnu
+   * se automaticky nabídne. Kdyby se ukládala povolená, nové město
+   * by se nikdy neobjevilo — stejný důvod jako u vypnutých sloupců.
+   */
+  zakazanaMesta: string[];
 }
+
+/**
+ * Města, do kterých se dá dojet po královském kontinentu.
+ *
+ * V herních datech příznak není, takže je to seznam tady. Caerleon
+ * je černá zóna uprostřed mapy, Brecilien leží v Roads of Avalon —
+ * ani jedno není „jen tak dojet".
+ */
+export const MIMO_KRALOVSKY_KONTINENT = ["Caerleon", "Brecilien"];
 
 /**
  * Co se liší kartu od karty.
@@ -61,7 +88,24 @@ export interface NastaveniAplikace {
   sazby: SazbyStanic;
 }
 
-export const VYCHOZI_GLOBALNI: NastaveniGlobalni = { premium: true, denniBonus: 0 };
+export const VYCHOZI_GLOBALNI: NastaveniGlobalni = {
+  premium: true,
+  denniBonus: 0,
+  // Nic nevynecháváme, dokud si uživatel neřekne — vyloučit město za něj
+  // by znamenalo tiše schovat příležitosti, o kterých neví.
+  zakazanaMesta: [],
+};
+
+/**
+ * Města, ze kterých smí automatický výběr vybírat.
+ *
+ * **Jediné místo, kde se pravidlo vyhodnocuje.** Kdyby si ho UI opsalo,
+ * uživatel by odškrtl město a v tabulce by ho dál viděl.
+ */
+export function povolenaMesta(globalni: NastaveniGlobalni, vsechna: string[]): string[] {
+  const zakazana = new Set(globalni.zakazanaMesta ?? []);
+  return vsechna.filter((m) => !zakazana.has(m));
+}
 
 export const VYCHOZI_KARTA: NastaveniKarty = {
   pocetVyrobku: 100,
@@ -108,6 +152,9 @@ export function ocistiNastaveni(x: unknown): NastaveniAplikace {
     globalni: {
       premium: typeof g.premium === "boolean" ? g.premium : VYCHOZI_GLOBALNI.premium,
       denniBonus: cislo(g.denniBonus, VYCHOZI_GLOBALNI.denniBonus),
+      zakazanaMesta: Array.isArray(g.zakazanaMesta)
+        ? g.zakazanaMesta.filter((x): x is string => typeof x === "string")
+        : [],
     },
     karty,
     sazby: ocistiSazby(d.sazby),
@@ -148,6 +195,9 @@ export function zeSpolecneho(stare: {
     globalni: {
       premium: typeof stare.premium === "boolean" ? stare.premium : VYCHOZI_GLOBALNI.premium,
       denniBonus: cislo(stare.denniBonus, VYCHOZI_GLOBALNI.denniBonus),
+      // Staré nastavení města nevylučovalo — po migraci se nesmí nic
+      // schovat, jinak by se uživateli tiše změnila doporučení.
+      zakazanaMesta: [],
     },
     karty,
     sazby: typeof stare.sazbaStanice === "number" && Number.isFinite(stare.sazbaStanice)
