@@ -208,6 +208,122 @@ function zpracujPolozky(items) {
 }
 
 /**
+ * Dopočítá `itemValue` tam, kde ho herní data nemají.
+ *
+ * **Atribut `itemvalue` nese jen `simpleitem` — suroviny a artefakty.**
+ * Ověřeno 2026-08-10 na commitu 5cf2e8e9: ani jeden z 1 898 elementů
+ * `weapon` / `equipmentitem` ho nemá. Do té doby měla veškerá výbava
+ * hodnotu 0, a protože se z ní počítá poplatek stanice
+ * (`nutrition = itemValue × koeficient`), vycházel poplatek za crafting
+ * VŽDY nula. Náklady v Dílně tak byly podhodnocené o celý poplatek.
+ *
+ * Odvození: hodnota výrobku = součet hodnot vstupů × jejich počet,
+ * děleno počtem vyrobených kusů. Rekurzivně, protože vstup nemusí mít
+ * hodnotu přímo. Artefakty ji mají všechny (ověřeno: 730 ze 730),
+ * takže artefaktové zbraně vyjdou taky.
+ *
+ * Počítá se jen pro enchant 0. Zdvojnásobení podle enchantu řeší
+ * `itemValue()` v jádru — enchantované recepty berou enchantované
+ * suroviny, takže obojí dává totéž.
+ *
+ * **Není to z herních dat, je to odvození.** Ověřuje se poměrem
+ * poplatků ve hře (T5 Broadsword musí stát 2× co T4 a 1,5× co T5 Plate
+ * Armor) a zlatými vektory níž, aby tichá změna neprošla.
+ */
+function dopocitejItemValue(polozky) {
+  const podle = new Map(polozky.map((p) => [p.zaklad, p]));
+  const kes = new Map();
+  const naCeste = new Set();
+
+  /**
+   * Co dopočet zastavilo a jestli s tím jde něco dělat.
+   *
+   * `resitelne: true` znamená mezeru v tomhle algoritmu — to se má ohlásit
+   * jako chyba. `false` znamená, že z čeho počítat prostě není: vstup mimo
+   * herní položky, nebo recept bez vstupů. Tam je nula správná odpověď.
+   */
+  let blokujici = null;
+
+  function hodnota(zaklad, enchant, hloubka) {
+    const p = podle.get(zaklad);
+    // Vstup, který vůbec není mezi zpracovanými položkami — questovní token,
+    // skillbook, syrová surovina bez receptu. Nedá se dopočítat a ani nemá
+    // tržní cenu, takže na tom nic nestojí.
+    if (!p) { blokujici ??= { id: zaklad, resitelne: false }; return null; }
+    // Z dat má přednost vždycky. Dopočítáváme jen to, co chybí.
+    if (p.itemValue > 0) return p.itemValue * Math.pow(2, enchant);
+
+    const k = `${zaklad}#${enchant}`;
+    if (kes.has(k)) return kes.get(k);
+    // Ochrana proti cyklu. V datech by být neměl, ale kdyby se objevil,
+    // zacyklil by generátor. NEcachovat — platí jen pro tuhle větev.
+    // Cyklus nebo příliš hluboký řetěz je JEDINÝ důvod, který je opravdu
+    // na nás — proto se hlásí jako řešitelný.
+    if (naCeste.has(k) || hloubka > 8) {
+      blokujici ??= { id: zaklad, resitelne: true };
+      return null;
+    }
+
+    const varianta = p.varianty.find((x) => x.enchant === enchant && !x.sFactionTokenem)
+      ?? p.varianty.find((x) => x.enchant === enchant);
+    // Recept bez vstupů (kosmetické předměty) — z ničeho nic neodvodíš.
+    if (!varianta || varianta.vstupy.length === 0) {
+      blokujici ??= { id: zaklad, resitelne: false };
+      return null;
+    }
+
+    naCeste.add(k);
+    let soucet = 0;
+    let uplne = true;
+    for (const vstup of varianta.vstupy) {
+      const h = hodnota(vstup.zaklad, vstup.enchant, hloubka + 1);
+      // Jediný neznámý vstup znamená, že součet by byl podhodnocený.
+      // Radši nedopočítat nic než tiše vrátit menší číslo.
+      if (h === null) { uplne = false; break; }
+      soucet += h * vstup.pocet;
+    }
+    naCeste.delete(k);
+
+    const vysledek = uplne ? soucet / varianta.pocetVyrobenych : null;
+    kes.set(k, vysledek);
+    return vysledek;
+  }
+
+  let dopocteno = 0;
+  const nedopocitane = [];
+  for (const p of polozky) {
+    if (p.itemValue > 0) continue;
+    blokujici = null;
+    const h = hodnota(p.zaklad, 0, 0);
+    if (h !== null && h > 0) { p.itemValue = h; dopocteno++; }
+    else if (p.druh === "vybava") {
+      nedopocitane.push({ zaklad: p.zaklad, kategorie: p.kategorie, blokujici });
+    }
+  }
+  return { dopocteno, nedopocitane };
+}
+
+/**
+ * Kategorie, které aplikace opravdu skenuje.
+ *
+ * Guard níž je hlídá jmenovitě, ne procentem z celku. Procentní strop
+ * propustí i to, že přestanou vycházet všechny meče, když se místo nich
+ * dopočítá dost slavnostních klobouků — a přesně u mečů na tom čísle
+ * záleží. Zdroj je `kategorie.ts` na straně webu; kdyby se rozešly,
+ * projeví se to tím, že tenhle seznam přestane odpovídat skutečnosti.
+ */
+const SKENOVANE_KATEGORIE = [
+  "sword", "dagger", "axe", "mace", "hammer", "quarterstaff", "spear",
+  "bow", "crossbow", "knuckles",
+  "firestaff", "froststaff", "arcanestaff", "holystaff", "naturestaff", "cursestaff",
+  "plate_helmet", "plate_armor", "plate_shoes",
+  "leather_helmet", "leather_armor", "leather_shoes",
+  "cloth_helmet", "cloth_armor", "cloth_shoes",
+  "offhand", "offhands", "shieldtype",
+  "bag", "cape", "tools", "gatherergear",
+];
+
+/**
  * clusterid → jméno města.
  * V herních datech jsou lokace jen čísly. Jména musí odpovídat tomu,
  * co používá AODP v parametru `locations`, jinak by se ceny nespárovaly.
@@ -330,8 +446,13 @@ function zpracujKonstanty(gd) {
   };
 }
 
-/** Ověření, že vygenerovaná data dávají smysl. Chrání před tichým rozbitím. */
-function overit(data) {
+/**
+ * Ověření, že vygenerovaná data dávají smysl. Chrání před tichým rozbitím.
+ *
+ * @param nedopocitane  výbava, u které se `itemValue` nepodařilo odvodit,
+ *   včetně toho, co dopočet zastavilo
+ */
+function overit(data, nedopocitane) {
   const chyby = [];
 
   const najdi = (zaklad) => data.polozky.find((p) => p.zaklad === zaklad);
@@ -393,6 +514,61 @@ function overit(data) {
     }
   }
 
+  // ── Dopočítaný itemValue ──────────────────────────────────────
+  //
+  // Herní data ho u výbavy nemají vůbec, takže se odvozuje ze vstupů.
+  // Kdyby se odvození rozbilo, poplatek stanice by tiše spadl na nulu
+  // a náklady na crafting by zase byly podhodnocené — přesně ta vada,
+  // kvůli které tahle kontrola vznikla (2026-08-10).
+  const ocekavanaHodnota = {
+    // 16× T5_METALBAR(32) + 8× T5_LEATHER(32)
+    T5_MAIN_SWORD: 768,
+    // Polovina tieru = polovina hodnoty. Řada se po tierech zdvojnásobuje.
+    T4_MAIN_SWORD: 384,
+    T6_MAIN_SWORD: 1536,
+    // 16× T5_METALBAR(32), bez kůže
+    T5_ARMOR_PLATE_SET1: 512,
+    // 20× T5_PLANKS(32) + 12× T5_CLOTH(32)
+    T5_2H_HOLYSTAFF: 1024,
+  };
+  for (const [id, ocekavano] of Object.entries(ocekavanaHodnota)) {
+    const p = najdi(id);
+    if (!p) chyby.push(`chybí ${id}`);
+    else if (p.itemValue !== ocekavano) {
+      chyby.push(`${id} itemValue má být ${ocekavano}, je ${p.itemValue}`);
+    }
+  }
+
+  // Artefakty nesou hodnotu z dat — bez nich by artefaktové zbraně
+  // zůstaly na nule, protože jeden neznámý vstup zruší celý součet.
+  const artefaktBezHodnoty = data.polozky.filter(
+    (p) => /ARTEFACT/.test(p.zaklad) && !(p.itemValue > 0),
+  ).length;
+  if (artefaktBezHodnoty > 0) {
+    chyby.push(`${artefaktBezHodnoty} artefaktů bez itemValue`);
+  }
+
+  // Ve skenovaných kategoriích nesmí zůstat kus, který dopočítat ŠLO.
+  //
+  // Rozlišit dva důvody je podstatné. Když dopočet zastaví vstup, který
+  // v položkách vůbec není (questovní token do avalonských nástrojů,
+  // skillbook do Insight tašek, syrová T1 surovina), nedá se s tím nic
+  // dělat — a nevadí to, protože takový vstup nemá ani tržní cenu, takže
+  // se u něj stejně nedá počítat zisk. Když ale dopočet selže na položce,
+  // kterou známe, je to mezera v odvození a čísla by tiše klesla na nulu.
+  const skenovane = new Set(SKENOVANE_KATEGORIE);
+  const podezrela = (nedopocitane ?? []).filter(
+    (p) => skenovane.has(p.kategorie) && p.blokujici?.resitelne === true,
+  );
+  if (podezrela.length > 0) {
+    const ukazka = podezrela.slice(0, 5)
+      .map((p) => `${p.zaklad} (blokuje ${p.blokujici?.id ?? "?"})`).join(", ");
+    chyby.push(
+      `${podezrela.length} skenovaných kusů výbavy bez itemValue, a to z důvodu, `
+      + `který jde odstranit: ${ukazka}`,
+    );
+  }
+
   // Bez jmen měst by se ceny z AODP nespárovaly s bonusy lokací.
   for (const mesto of ["Thetford", "Lymhurst", "Bridgewatch", "Martlock", "Fort Sterling", "Caerleon"]) {
     if (!data.lokace.some((l) => l.nazev === mesto)) chyby.push(`chybí lokace ${mesto}`);
@@ -428,6 +604,23 @@ async function hlavni() {
   const polozky = zpracujPolozky(parser.parse(items));
   for (const p of polozky) p.nazev = nazvy.get(p.zaklad) ?? null;
 
+  const { dopocteno, nedopocitane } = dopocitejItemValue(polozky);
+  console.log(`  itemValue dopočítán u ${dopocteno} položek (herní data ho mají jen u surovin)`);
+  if (nedopocitane.length > 0) {
+    // Vypsat po kategoriích, ne jen počet — u tichého selhání je první
+    // otázka „čeho se to týká", a hledat to ručně v 2 800 položkách nechce nikdo.
+    const podleBlokujiciho = new Map();
+    for (const p of nedopocitane) {
+      const k = p.blokujici?.id ?? "(neznámo)";
+      podleBlokujiciho.set(k, (podleBlokujiciho.get(k) ?? 0) + 1);
+    }
+    const souhrn = [...podleBlokujiciho.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([k, n]) => `${n}× ${k}`)
+      .join(", ");
+    console.log(`  bez itemValue zůstalo ${nedopocitane.length} kusů výbavy — blokuje: ${souhrn}`);
+  }
+
   const bezNazvu = polozky.filter((p) => !p.nazev).length;
   if (bezNazvu > 0) console.log(`  bez názvu: ${bezNazvu} položek`);
 
@@ -441,7 +634,7 @@ async function hlavni() {
 
   console.log(`  položek: ${data.polozky.length}, lokací: ${data.lokace.length}`);
 
-  const chyby = overit(data);
+  const chyby = overit(data, nedopocitane);
   if (chyby.length > 0) {
     console.error("\nOVĚŘENÍ SELHALO — data se NEZAPÍŠÍ:");
     for (const ch of chyby) console.error(`  ✗ ${ch}`);

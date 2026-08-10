@@ -149,6 +149,77 @@ describe("focus a itemValue", () => {
   });
 });
 
+/**
+ * Výbava nemá `itemvalue` v herních datech — generátor ho dopočítává
+ * ze vstupů (viz `dopocitejItemValue`).
+ *
+ * Než tohle vzniklo, měla veškerá výbava hodnotu 0 a poplatek stanice
+ * za crafting proto vycházel VŽDY nula. Náklady v Dílně byly podhodnocené
+ * o celý poplatek a nikdo si toho nevšiml, protože kontrola v generátoru
+ * hlídala jen T5_METALBAR.
+ *
+ * Kdyby se dopočet rozbil, tyhle testy spadnou dřív, než se čísla dostanou
+ * na produkci — `npm test` běží ve workflow před nasazením.
+ */
+describe("itemValue výbavy — dopočítaný, ne z herních dat", () => {
+  it("meč = 16 ingotů + 8 kůží, tedy 24 × 32", () => {
+    expect(najdi("T5_MAIN_SWORD").itemValue).toBe(768);
+  });
+
+  it("řada se po tierech zdvojnásobuje, stejně jako u surovin", () => {
+    expect(najdi("T4_MAIN_SWORD").itemValue).toBe(384);
+    expect(najdi("T5_MAIN_SWORD").itemValue).toBe(768);
+    expect(najdi("T6_MAIN_SWORD").itemValue).toBe(1536);
+  });
+
+  it("brnění bez kůže má nižší hodnotu než meč", () => {
+    // 16 × 32 = 512 proti 768 u meče. Kdyby se počítalo z něčeho jiného
+    // než ze vstupů, tenhle poměr by nevyšel.
+    expect(najdi("T5_ARMOR_PLATE_SET1").itemValue).toBe(512);
+  });
+
+  it("hůl počítá prkna i látku", () => {
+    // 20 × T5_PLANKS(32) + 12 × T5_CLOTH(32) = 1024
+    expect(najdi("T5_2H_HOLYSTAFF").itemValue).toBe(1024);
+  });
+
+  it("artefaktová zbraň započítá i artefakt", () => {
+    // 32 × T4_PLANKS(16) + 1 × artefakt(128) = 640
+    expect(najdi("T4_2H_LONGBOW_UNDEAD").itemValue).toBe(640);
+  });
+
+  it("POPLATEK ZA CRAFTING NENÍ NULA — to je celý smysl téhle opravy", () => {
+    const p = poplatekStanice(najdi("T5_MAIN_SWORD"), 0, 200, data.konstanty.nutritionKoeficient);
+    expect(p).toBeGreaterThan(0);
+    // 768 × 0,1125 × 200 / 100
+    expect(p).toBeCloseTo(172.8, 6);
+  });
+
+  it("enchant zdvojnásobuje hodnotu i u výbavy", () => {
+    expect(itemValue(najdi("T5_MAIN_SWORD"), 1)).toBe(1536);
+    expect(itemValue(najdi("T5_MAIN_SWORD"), 4)).toBe(12_288);
+  });
+
+  it("žádná zbraň ani brnění v běžných kategoriích nezůstalo na nule", () => {
+    // Nula znamená poplatek zdarma. U kategorií, které se skenují,
+    // by to tiše nadhodnotilo zisk.
+    const bezne = new Set([
+      "sword", "dagger", "axe", "mace", "hammer", "quarterstaff", "spear",
+      "bow", "crossbow", "knuckles",
+      "firestaff", "froststaff", "arcanestaff", "holystaff", "naturestaff", "cursestaff",
+      "plate_helmet", "plate_armor", "plate_shoes",
+      "leather_helmet", "leather_armor", "leather_shoes",
+      "cloth_helmet", "cloth_armor", "cloth_shoes",
+    ]);
+    const nulove = data.polozky.filter(
+      (p) => p.druh === "vybava" && p.kategorie !== null && bezne.has(p.kategorie)
+        && !(p.itemValue > 0),
+    );
+    // T1 kusy zůstávají na nule právem: T1 suroviny hodnotu nemají.
+    expect(nulove.every((p) => p.tier <= 1)).toBe(true);
+  });
+});
+
 describe("váhy", () => {
   it.each([[2, 0.23], [3, 0.34], [4, 0.51], [5, 0.76], [6, 1.14], [7, 1.71], [8, 2.56]])(
     "T%i váží %f kg", (tier, vaha) => {
