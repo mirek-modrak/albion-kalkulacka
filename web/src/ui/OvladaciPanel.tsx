@@ -7,6 +7,7 @@ import {
   type Metrika, type NastaveniSkenu,
 } from "../stav/sken";
 import type { StavSkenu } from "../App";
+import type { NastaveniGlobalni, NastaveniKarty } from "../stav/nastaveni";
 
 interface Props {
   server: Server;
@@ -21,6 +22,24 @@ interface Props {
   setJenZiskove: (b: boolean) => void;
   /** Který režim je aktivní — Black Market se nabízí jen ve skenu města. */
   rezim: "mesto" | "prilezitosti" | "prevoz" | "dilna" | "refining";
+  /**
+   * Vlastnost účtu a herního dne — platí pro všechny karty.
+   *
+   * Oddělené od `karta` schválně: premium má hráč pro celý účet a denní
+   * bonus vyhlašuje server všem stejně, takže mít je v Dílně jinak než
+   * v Refiningu by nedávalo smysl.
+   */
+  globalni: NastaveniGlobalni;
+  setGlobalni: (g: NastaveniGlobalni) => void;
+  /** Nastavení PRÁVĚ TÉHLE karty. Sousední karta má vlastní. */
+  karta: NastaveniKarty;
+  setKarta: (k: NastaveniKarty) => void;
+  /**
+   * Panel poplatků stanic. Vkládá ho App, protože ví, které položky karta
+   * počítá — panel se pak neptá na stavby, do kterých uživatel nechodí.
+   * `null` u Převozu, kde se nic nevyrábí.
+   */
+  stanice?: React.ReactNode;
   stav: StavSkenu;
   spustitSken: () => void;
   zrusitSken: () => void;
@@ -65,6 +84,9 @@ export function OvladaciPanel(p: Props) {
   // na běžné tržnici, takže volba sell order vs. buy order platí i tam.
   const maVlastniVyberMest = jeDilna || p.rezim === "refining";
 
+  // Převoz nic nevyrábí: focus ani poplatek stanice se u něj neuplatní.
+  const jePrevoz = p.rezim === "prevoz";
+
   return (
     <aside className="space-y-1 rounded-xl border border-slate-200 bg-white p-4
                       dark:border-slate-800 dark:bg-slate-900">
@@ -103,37 +125,46 @@ export function OvladaciPanel(p: Props) {
       )}
 
       <Popisek>Denní bonus</Popisek>
-      <select className={stylPole} value={p.nastaveni.denniBonus}
-              onChange={(e) => uprav("denniBonus", Number(e.target.value))}>
+      <select className={stylPole} value={p.globalni.denniBonus}
+              onChange={(e) => p.setGlobalni({
+                ...p.globalni, denniBonus: Number(e.target.value),
+              })}>
         <option value={0}>žádný</option>
         <option value={10}>silver day (+10)</option>
         <option value={20}>gold day (+20)</option>
       </select>
 
-      <label className="mt-3 flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={p.nastaveni.focus}
-               onChange={(e) => uprav("focus", e.target.checked)} />
-        Používám focus (+59)
-      </label>
+      {/* Focus se u Převozu neuplatní — nic se nevyrábí. Ovladač, který
+          nic nedělá, je horší než chybějící ovladač. */}
+      {!jePrevoz && (
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={p.karta.focus}
+                 onChange={(e) => p.setKarta({ ...p.karta, focus: e.target.checked })} />
+          Používám focus (+59)
+          <span className="text-xs text-slate-400">jen tady</span>
+        </label>
+      )}
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={p.nastaveni.premium}
-               onChange={(e) => uprav("premium", e.target.checked)} />
+        <input type="checkbox" checked={p.globalni.premium}
+               onChange={(e) => p.setGlobalni({ ...p.globalni, premium: e.target.checked })} />
         Premium (daň 4 % místo 8 %)
       </label>
 
-      <Popisek>Poplatek stanice (silver / 100 nutrition)</Popisek>
-      <input type="number" min={0} step={10} className={stylPole}
-             value={p.nastaveni.sazbaStanice}
-             onChange={(e) => uprav("sazbaStanice", Number(e.target.value))} />
+      {/* Poplatek stanice se nastavuje po stanicích v samostatném panelu —
+          jedno číslo pro Tavírnu i Mage's Tower bylo principiálně špatně. */}
 
       <Popisek>Počet kusů (pro absolutní čísla)</Popisek>
       <input type="number" min={1} step={10} className={stylPole}
-             value={p.nastaveni.pocetVyrobku}
-             onChange={(e) => uprav("pocetVyrobku", Math.max(1, Number(e.target.value)))} />
+             value={p.karta.pocetVyrobku}
+             onChange={(e) => p.setKarta({
+               ...p.karta, pocetVyrobku: Math.max(1, Number(e.target.value)),
+             })} />
 
       <Popisek>Nákup surovin</Popisek>
-      <select className={stylPole} value={p.nastaveni.rezimNakupu}
-              onChange={(e) => uprav("rezimNakupu", e.target.value as "instant" | "order")}>
+      <select className={stylPole} value={p.karta.rezimNakupu}
+              onChange={(e) => p.setKarta({
+                ...p.karta, rezimNakupu: e.target.value as "instant" | "order",
+              })}>
         <option value="instant">hned ze sell orderů</option>
         <option value="order">přes buy order (+2,5 % fee)</option>
       </select>
@@ -148,8 +179,10 @@ export function OvladaciPanel(p: Props) {
               {" "}· na Black Marketu se neuplatní
             </span>}
           </Popisek>
-          <select className={stylPole} value={p.nastaveni.rezimProdeje} disabled={naBM}
-                  onChange={(e) => uprav("rezimProdeje", e.target.value as "instant" | "order")}>
+          <select className={stylPole} value={p.karta.rezimProdeje} disabled={naBM}
+                  onChange={(e) => p.setKarta({
+                    ...p.karta, rezimProdeje: e.target.value as "instant" | "order",
+                  })}>
             <option value="order">přes sell order (+2,5 % fee)</option>
             <option value="instant">hned do buy orderů</option>
           </select>
@@ -210,6 +243,8 @@ export function OvladaciPanel(p: Props) {
           </p>
         </>
       )}
+
+      {p.stanice && <div className="mt-3">{p.stanice}</div>}
 
       {p.stav.druh === "bezi" ? (
         <div className="mt-4 space-y-2">

@@ -37,6 +37,11 @@ import { PanelPrevozu } from "./ui/PanelPrevozu";
 import { Prihlaseni } from "./ui/Prihlaseni";
 import type { Uzivatel } from "./stav/sync";
 import { nactiPredvolby, ulozPredvolby, type Rezim } from "./stav/predvolby";
+import {
+  nactiNastaveni, ulozNastaveni,
+  type NastaveniAplikace, type NastaveniGlobalni, type NastaveniKarty,
+} from "./stav/nastaveni";
+import { PanelStanic } from "./ui/PanelStanic";
 
 /**
  * Lidský název položky.
@@ -113,6 +118,13 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const [nastaveni, setNastaveni] = useState<NastaveniSkenu>(
     () => ({ ...VYCHOZI_NASTAVENI, ...nacti(predvolby.server).nastaveni }),
   );
+  // Nastavení na třech úrovních (F11). `nastaveni` výš drží jen to, co je
+  // vlastností SKENU — město, rozsah, místo prodeje. Premium, dávka, focus
+  // a poplatky stanic žijí tady, protože každé patří na jinou úroveň.
+  const [nastaveniApp, setNastaveniApp] = useState<NastaveniAplikace>(
+    () => nactiNastaveni(predvolby.server),
+  );
+
   const [metrika, setMetrika] = useState<Metrika>(predvolby.metrika);
   const [maxStari, setMaxStari] = useState<number>(predvolby.maxStari);
   const [jenZiskove, setJenZiskove] = useState(predvolby.jenZiskove);
@@ -184,8 +196,23 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   // Kdo přepne město a hned klikne (dřív než React překreslí), stáhl by
   // ceny jiného města, než má vybrané — a tabulka by hlásila „chybí cena“
   // bez zjevného důvodu.
-  const nastaveniRef = useRef(nastaveni);
-  nastaveniRef.current = nastaveni;
+  /**
+   * Nastavení pro AKTIVNÍ kartu — tři úrovně složené do jednoho objektu,
+   * který rozumí výpočet.
+   *
+   * Skládá se právě tady, na jednom místě. Kdyby si to každá karta dělala
+   * po svém, rozešlo by se to při první úpravě a uživatel by viděl jinou
+   * dávku v tabulce než v nastavení.
+   */
+  const nastaveniKarty: NastaveniSkenu = useMemo(() => ({
+    ...nastaveni,
+    ...nastaveniApp.globalni,
+    ...nastaveniApp.karty[rezim],
+    sazbyStanic: nastaveniApp.sazby,
+  }), [nastaveni, nastaveniApp, rezim]);
+
+  const nastaveniRef = useRef(nastaveniKarty);
+  nastaveniRef.current = nastaveniKarty;
   const serverRef = useRef(server);
   serverRef.current = server;
   const rezimRef = useRef(rezim);
@@ -309,12 +336,12 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
 
   const radky: RadekSkenu[] = useMemo(
     () => spocitatSken(
-      nastaveni, skladRef.current, lokace(nastaveni.mesto), HRA.konstanty, nazevPolozky,
+      nastaveniKarty, skladRef.current, lokace(nastaveni.mesto), HRA.konstanty, nazevPolozky,
       historieRef.current,
     ),
     // verzeCen je záměrně v závislostech — sklad je proměnlivý objekt,
     // React by změnu uvnitř něj sám nezaznamenal.
-    [nastaveni, verzeCen],
+    [nastaveniKarty, verzeCen],
   );
 
   const filtrovane = useMemo(() => {
@@ -331,10 +358,10 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   // nebo override), u „nejlevnější" napříč městy. Pořadí drží podle seznamu.
   const dilnaVysledky = useMemo(
     () => rezim !== "dilna" ? [] : vyhodnotitDilnu(
-      dilna, skladRef.current, historieRef.current, HRA.konstanty, nastaveni, nazevPolozky,
+      dilna, skladRef.current, historieRef.current, HRA.konstanty, nastaveniKarty, nazevPolozky,
     ),
     // dilnaKombinace v závislostech drží přepočet při změně seznamu i konfigurace.
-    [rezim, nastaveni, verzeCen, dilna, dilnaKombinace],
+    [rezim, nastaveniKarty, verzeCen, dilna, dilnaKombinace],
   );
 
   // Refining: každá surovina pod svou trojicí měst. Naměřeno 2026-08-10:
@@ -342,12 +369,12 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   // stojí 23 ms, takže strop na počet řádků není potřeba.
   const refiningVysledky = useMemo(
     () => rezim !== "refining" ? [] : vyhodnotitRefining(
-      refining, skladRef.current, historieRef.current, HRA.konstanty, nastaveni,
+      refining, skladRef.current, historieRef.current, HRA.konstanty, nastaveniKarty,
       nazevPolozky, nastaveniPrevozu.nosnostKg, maxStari,
     ),
     // maxStari je v závislostech schválně: řídí, které ceny smí auto-výběr
     // použít, takže jeho změna musí přepočítat, ne jen přefiltrovat.
-    [rezim, nastaveni, verzeCen, refining, refiningKombinace,
+    [rezim, nastaveniKarty, verzeCen, refining, refiningKombinace,
       nastaveniPrevozu.nosnostKg, maxStari],
   );
 
@@ -356,11 +383,11 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const prilezitosti = useMemo(
     () => rezim === "prilezitosti"
       ? spocitatNapricMesty(
-          nastaveni, skladRef.current, HRA.konstanty, nazevPolozky, metrika,
+          nastaveniKarty, skladRef.current, HRA.konstanty, nazevPolozky, metrika,
           historieRef.current,
         )
       : [],
-    [rezim, nastaveni, verzeCen, metrika],
+    [rezim, nastaveniKarty, verzeCen, metrika],
   );
 
   const filtrovanePrilezitosti = useMemo(() => {
@@ -406,6 +433,12 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
     uloz(server, nastaveni, skladRef.current.export());
   }, [server, nastaveni, verzeCen]);
 
+  // Tři úrovně nastavení mají vlastní klíč, ale drží se stejně jako ceny
+  // zvlášť pro každý server — kdo hraje na dvou, má tam jiné stanice.
+  useEffect(() => {
+    ulozNastaveni(server, nastaveniApp);
+  }, [server, nastaveniApp]);
+
   // Předvolby zobrazení. Odděleně od nastavení skenu — to je vázané na
   // herní server a synchronizuje se, tohle je vlastnost zařízení.
   useEffect(() => {
@@ -437,6 +470,9 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
     historieRef.current = novaHistorie;
 
     if (ulozeno.nastaveni) setNastaveni((n) => ({ ...n, ...ulozeno.nastaveni }));
+    // Poplatky stanic i dávky patří k serveru stejně jako ceny — sazba
+    // z `west` nevypovídá o stanicích na `europe`.
+    setNastaveniApp(nactiNastaveni(server));
     setVerzeCen((v) => v + 1);
     setStav({ druh: "necinny" });
   }, [server]);
@@ -444,6 +480,19 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const s = souhrn(radky);
   const sP = souhrnPrilezitosti(prilezitosti);
   const sR = souhrnRefiningu(refiningVysledky);
+
+  /**
+   * Položky, podle kterých se vybere, které stanice v panelu nabídnout.
+   *
+   * U Dílny a Refiningu je to jejich seznam — nemá smysl nabízet Tavírnu
+   * někomu, kdo vyrábí jen hole. U skenů je rozsah daný výběrem kategorií,
+   * takže se vezme prvních pár spočítaných řádků.
+   */
+  const polozkyProStanice = useMemo(() => {
+    if (rezim === "dilna") return dilnaKombinace.map((k) => k.polozka);
+    if (rezim === "refining") return refiningKombinace.map((k) => k.polozka);
+    return radky.slice(0, 200).map((r) => r.polozka);
+  }, [rezim, dilnaKombinace, refiningKombinace, radky]);
 
   /**
    * Na kolik jízd mountu se dávka veze.
@@ -529,8 +578,24 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
             setVerzeCen((v) => v + 1);
             setStav({ druh: "necinny" });
           }}
+          globalni={nastaveniApp.globalni}
+          setGlobalni={(globalni) => setNastaveniApp((n) => ({ ...n, globalni }))}
+          karta={nastaveniApp.karty[rezim]}
+          setKarta={(k) => setNastaveniApp((n) => ({
+            ...n, karty: { ...n.karty, [rezim]: k },
+          }))}
           maUlozeneCeny={skladRef.current.pocet > 0}
           souhrn={s}
+          // Poplatky stanic pod panelem, ne v něm: patří na vlastní úroveň
+          // a nabízejí se jen ty, které daná karta opravdu používá.
+          stanice={rezim === "prevoz" ? null : (
+            <PanelStanic
+              sazby={nastaveniApp.sazby}
+              setSazby={(sazby) => setNastaveniApp((n) => ({ ...n, sazby }))}
+              polozky={polozkyProStanice}
+              jenRefining={rezim === "refining" ? true : undefined}
+            />
+          )}
         />
         {rezim === "prevoz" ? (
           <div className="space-y-3">
@@ -562,9 +627,9 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
             )}
             <TabRefining
               vysledky={refiningVysledky} stav={refining}
-              sklad={skladRef.current} davka={nastaveni.pocetVyrobku}
-              typNakup={typProNakup(nastaveni.rezimNakupu)}
-              rezimProdeje={nastaveni.rezimProdeje}
+              sklad={skladRef.current} davka={nastaveniKarty.pocetVyrobku}
+              typNakup={typProNakup(nastaveniKarty.rezimNakupu)}
+              rezimProdeje={nastaveniKarty.rezimProdeje}
               nazevPolozky={nazevPolozky}
               uprav={upravRefining}
               zafixujProdej={(klic, mesto) =>
@@ -576,9 +641,9 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
         ) : rezim === "dilna" ? (
           <TabDilna
             vysledky={dilnaVysledky} stav={dilna} katalog={katalog}
-            sklad={skladRef.current} davka={nastaveni.pocetVyrobku}
-            typNakup={typProNakup(nastaveni.rezimNakupu)}
-            rezimProdeje={nastaveni.rezimProdeje}
+            sklad={skladRef.current} davka={nastaveniKarty.pocetVyrobku}
+            typNakup={typProNakup(nastaveniKarty.rezimNakupu)}
+            rezimProdeje={nastaveniKarty.rezimProdeje}
             nazevPolozky={nazevPolozky}
             uprav={upravDilnu}
             poZmeneCeny={() => setVerzeCen((v) => v + 1)}
@@ -600,14 +665,14 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
               prilezitosti={filtrovanePrilezitosti.radky}
               celkemPredOrezem={filtrovanePrilezitosti.celkem}
               metrika={metrika}
-              davka={nastaveni.pocetVyrobku}
+              davka={nastaveniKarty.pocetVyrobku}
               otevritDetail={(p) => setDetailKlic(p.klic)}
             />
           </div>
         ) : (
           <TabulkaSkenu
             radky={filtrovane} metrika={metrika} celkem={s.celkem}
-            davka={nastaveni.pocetVyrobku}
+            davka={nastaveniKarty.pocetVyrobku}
             otevritDetail={(r) => setDetailKlic(`${r.polozka.zaklad}#${r.enchant}`)}
           />
         )}
@@ -632,7 +697,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
           }))}
           server={server}
           lokace={lokace(detailPrilezitost?.nejlepsi.mesto ?? nastaveni.mesto)}
-          nastaveni={nastaveni}
+          nastaveni={nastaveniKarty}
           sklad={skladRef.current}
           nazevPolozky={nazevPolozky}
           verzeCen={verzeCen}
@@ -651,7 +716,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
               ? BLACK_MARKET : undefined
           }
           lokace={lokace(nastaveni.mesto)}
-          nastaveni={nastaveni}
+          nastaveni={nastaveniKarty}
           sklad={skladRef.current}
           nazevPolozky={nazevPolozky}
           verzeCen={verzeCen}
@@ -689,7 +754,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
           server={server}
           lokace={lokace(detailRefining.refining)}
           nastaveni={{
-            ...nastaveni,
+            ...nastaveniKarty,
             mesto: detailRefining.refining,
             nakupniMesto: detailRefining.nakup,
             prodejniMesto: detailRefining.prodej,
@@ -713,7 +778,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
           server={server}
           lokace={lokace(detailDilna.mesto)}
           nastaveni={{
-            ...nastaveni, mesto: detailDilna.mesto, skupina: "zbrane",
+            ...nastaveniKarty, mesto: detailDilna.mesto, skupina: "zbrane",
             mistoProdeje: detailDilna.mistoProdeje,
           }}
           sklad={skladRef.current}

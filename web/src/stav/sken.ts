@@ -15,6 +15,7 @@ import {
 } from "@albion/jadro";
 import { BLACK_MARKET, refinedKombinace, vybavaKombinace, vaha, type Kombinace } from "../data/hra";
 import { SUROVINY_ID, kategorieSkupiny } from "../data/kategorie";
+import { sazbaProPolozku, type SazbyStanic } from "./stanice";
 import type { SkladCen } from "./skladCen";
 import { vyhodnotLikviditu, type Likvidita, type SkladHistorie } from "./skladHistorie";
 
@@ -26,6 +27,14 @@ export interface NastaveniSkenu {
   denniBonus: number;
   premium: boolean;
   sazbaStanice: number;
+  /**
+   * Sazby po stanicích. Když jsou zadané, mají přednost před `sazbaStanice`.
+   *
+   * Poplatek si nastavuje majitel stavby, takže Tavírna a Mage's Tower mají
+   * každá jinou sazbu. `sazbaStanice` zůstává jako záloha pro volání, která
+   * o stanicích nevědí (testy, starší uložená data).
+   */
+  sazbyStanic?: SazbyStanic;
   pocetVyrobku: number;
   rezimNakupu: RezimCeny;
   rezimProdeje: RezimCeny;
@@ -395,7 +404,11 @@ export function spocitatSken(
       cenyVstupu,
       cenaVystupu,
       premium: nastaveni.premium,
-      sazbaStanice: nastaveni.sazbaStanice,
+      // Sazba té stanice, ve které se vyrábí TAHLE položka. Bez sazeb
+      // po stanicích se použije jedno společné číslo jako dřív.
+      sazbaStanice: nastaveni.sazbyStanic
+        ? sazbaProPolozku(nastaveni.sazbyStanic, polozka)
+        : nastaveni.sazbaStanice,
       rezimNakupu: nastaveni.rezimNakupu,
       rezimProdeje,
       // Zůstává pravdivé, i když se při prodeji do výkupu setup fee neplatí

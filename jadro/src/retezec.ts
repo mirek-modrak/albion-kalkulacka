@@ -44,7 +44,16 @@ export interface KontextRetezce {
   cena: (zaklad: string, enchant: Enchant) => number | null;
   /** Production bonus pro danou položku — liší se podle města a suroviny. */
   bonusProPolozku: (polozka: HerniPolozka) => number;
-  sazbaStanice: number;
+  /**
+   * Sazba stanice pro danou položku.
+   *
+   * **Funkce, ne číslo.** Řetěz prochází patra a každé patro se vyrábí
+   * jinde: T5 meč ve Warrior's Forge, ale T5 ingot pod ním v Tavírně
+   * a T4 ingot pod tím taky. Jedno společné číslo (stav do F11) uplatnilo
+   * sazbu kovárny i na tavení, takže náklad na vlastní výrobu vycházel
+   * špatně — a právě podle něj se rozhoduje „koupit, nebo vyrobit".
+   */
+  sazbaStanice: (polozka: HerniPolozka) => number;
   konstanty: Konstanty;
   /** Pojistka proti zacyklení. */
   maxHloubka?: number;
@@ -135,8 +144,10 @@ function uzel(
   naCeste.delete(k);
 
   // Poplatek stanice se platí na KAŽDÉM patře, kde se vyrábí.
+  // Sazba té stanice, ve které se vyrábí TAHLE položka — ne ta, ve které
+  // se vyrábí výrobek na vrcholu řetězu.
   const poplatek = poplatekStanice(
-    polozka, enchant, kontext.sazbaStanice, kontext.konstanty.nutritionKoeficient,
+    polozka, enchant, kontext.sazbaStanice(polozka), kontext.konstanty.nutritionKoeficient,
   );
   // Pevný poplatek za dávku — nenulový u transmutace suroviny na vyšší
   // tier. Bez něj by transmutace vypadala zadarmo a řetěz by ji chybně

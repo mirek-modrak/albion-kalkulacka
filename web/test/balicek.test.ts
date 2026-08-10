@@ -25,6 +25,8 @@ vi.stubGlobal("localStorage", uloziste);
 const { VERZE_BALICKU, jePrazdny, jePrilisNovy, popis, pouzij, sesbirej } =
   await import("../src/stav/balicek");
 const { nactiRefining } = await import("../src/stav/refining");
+const { nactiNastaveni, ulozNastaveni, vychoziNastaveni } =
+  await import("../src/stav/nastaveni");
 const { nactiDilnu } = await import("../src/stav/dilna");
 const { PRAZDNY_REFINING } = await import("../src/stav/refining");
 const { PRAZDNY_STAV } = await import("../src/stav/dilna");
@@ -111,8 +113,8 @@ describe("čtení staršího balíčku", () => {
 });
 
 describe("verze balíčku", () => {
-  it("je 2 — refining přibyl ve F10", () => {
-    expect(VERZE_BALICKU).toBe(2);
+  it("je 3 — nastavení na třech úrovních přibylo ve F11", () => {
+    expect(VERZE_BALICKU).toBe(3);
   });
 
   it("novější formát se odmítne číst, ne přepsat", () => {
@@ -120,6 +122,59 @@ describe("verze balíčku", () => {
     expect(jePrilisNovy({ verze: VERZE_BALICKU + 1 })).toBe(true);
     expect(jePrilisNovy({ verze: VERZE_BALICKU })).toBe(false);
     expect(jePrilisNovy(null)).toBe(false);
+  });
+});
+
+describe("nastavení na třech úrovních v balíčku", () => {
+  it("poplatky stanic se přenesou na druhé zařízení", () => {
+    pouzij({
+      ...PRAZDNY_BALICEK,
+      servery: {
+        west: {
+          rucniCeny: [],
+          nastaveniAplikace: {
+            globalni: { premium: false, denniBonus: 20 },
+            karty: {}, sazby: { tavirna: 385, forge: 500 },
+          },
+        },
+      },
+    } as never);
+
+    const n = nactiNastaveni("west");
+    expect(n.sazby.tavirna).toBe(385);
+    expect(n.sazby.forge).toBe(500);
+    expect(n.globalni.denniBonus).toBe(20);
+  });
+
+  it("balíček ze starší verze poplatky NESHODÍ na výchozí", () => {
+    // Verze 1 a 2 tuhle část nemají. Kdyby se zapsala prázdná hodnota,
+    // uživatel by po přihlášení ze starého zařízení přišel o sazby.
+    const nove = vychoziNastaveni();
+    nove.sazby = { tavirna: 385 };
+    ulozNastaveni("west", nove);
+
+    pouzij({
+      ...PRAZDNY_BALICEK,
+      servery: { west: { rucniCeny: [] } },
+    } as never);
+
+    expect(nactiNastaveni("west").sazby.tavirna).toBe(385);
+  });
+
+  it("poškozené nastavení z balíčku se očistí, ne uloží rozbité", () => {
+    pouzij({
+      ...PRAZDNY_BALICEK,
+      servery: {
+        west: {
+          rucniCeny: [],
+          nastaveniAplikace: { sazby: { tavirna: -5 }, karty: { dilna: { pocetVyrobku: 0 } } },
+        },
+      },
+    } as never);
+
+    const n = nactiNastaveni("west");
+    expect(n.sazby.tavirna).toBeUndefined();
+    expect(n.karty.dilna.pocetVyrobku).toBe(1);
   });
 });
 

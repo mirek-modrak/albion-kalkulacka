@@ -22,7 +22,7 @@ function kontext(ceny: Record<string, number>, bonus = 58): KontextRetezce {
     najdiPolozku,
     cena: (z, e) => ceny[`${z}#${e}`] ?? null,
     bonusProPolozku: () => bonus,
-    sazbaStanice: 0,          // ať se poplatek neplete do kontrolních čísel
+    sazbaStanice: () => 0,    // ať se poplatek neplete do kontrolních čísel
     konstanty: data.konstanty,
   };
 }
@@ -49,7 +49,7 @@ describe("rekurze skončí", () => {
       najdiPolozku: (z) => (z === "CYKLUS" ? zacyklena : undefined),
       cena: () => 100,
       bonusProPolozku: () => 58,
-      sazbaStanice: 0,
+      sazbaStanice: () => 0,
       konstanty: data.konstanty,
     };
 
@@ -157,16 +157,40 @@ describe("poplatek stanice", () => {
   it("se platí na KAŽDÉM patře, kde se vyrábí", () => {
     const bez = spocitatRetezec("T5_METALBAR", 0, {
       ...kontext({ "T5_ORE#0": 10, "T4_ORE#0": 10, "T3_ORE#0": 10, "T2_ORE#0": 10 }),
-      sazbaStanice: 0,
+      sazbaStanice: () => 0,
     });
     const s = spocitatRetezec("T5_METALBAR", 0, {
       ...kontext({ "T5_ORE#0": 10, "T4_ORE#0": 10, "T3_ORE#0": 10, "T2_ORE#0": 10 }),
-      sazbaStanice: 1000,
+      sazbaStanice: () => 1000,
     });
 
     // Rozdíl musí být větší než poplatek za jedno patro — platí se čtyřikrát.
     const jednoPatro = 32 * data.konstanty.nutritionKoeficient * 1000 / 100;
     expect(s.nakladVyrobou! - bez.nakladVyrobou!).toBeGreaterThan(jednoPatro);
+  });
+
+  it("KAŽDÉ PATRO má svou sazbu, ne sazbu vrcholu", () => {
+    // Meč se vyrábí ve Warrior's Forge, ale ingoty pod ním v Tavírně.
+    // Do F11 tu bylo jedno číslo, takže se sazba kovárny uplatnila
+    // i na tavení — a náklad na vlastní výrobu vyšel špatně. Právě podle
+    // něj se přitom rozhoduje „koupit, nebo vyrobit".
+    const ceny = { "T5_METALBAR#0": 900, "T5_LEATHER#0": 700, "T5_ORE#0": 10, "T4_METALBAR#0": 10 };
+
+    // Drahá jen kovárna (meč), tavírna zdarma.
+    const jenVrchol = spocitatRetezec("T5_MAIN_SWORD", 0, {
+      ...kontext(ceny),
+      sazbaStanice: (p) => (p.kategorie === "sword" ? 1000 : 0),
+    });
+    // Drahá jen tavírna (ingoty), kovárna zdarma.
+    const jenPatra = spocitatRetezec("T5_MAIN_SWORD", 0, {
+      ...kontext(ceny),
+      sazbaStanice: (p) => (p.kategorie === "ore" ? 1000 : 0),
+    });
+
+    // Kdyby se sazba brala z vrcholu pro všechna patra, obě čísla by
+    // vyšla stejně. Musí se lišit — a poplatek za tavení musí být vidět.
+    expect(jenVrchol.nakladVyrobou).not.toBeCloseTo(jenPatra.nakladVyrobou!, 6);
+    expect(jenPatra.nakladVyrobou!).toBeGreaterThan(0);
   });
 });
 

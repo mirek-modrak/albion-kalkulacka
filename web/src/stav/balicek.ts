@@ -24,6 +24,9 @@ import {
   ulozPresetyRefiningu, ulozRefining,
   type PresetRefiningu, type StavRefiningu,
 } from "./refining";
+import {
+  nactiNastaveni, ocistiNastaveni, ulozNastaveni, type NastaveniAplikace,
+} from "./nastaveni";
 import { nacti, ulozIhned, type UlozenaCena } from "./uloziste";
 import type { NastaveniSkenu } from "./sken";
 
@@ -35,6 +38,8 @@ import type { NastaveniSkenu } from "./sken";
  * novější tvar se odmítne číst (viz `PORAD_NOVEJSI`).
  *
  * Verze 2 (2026-08-10, F10): přibyl refining a jeho presety.
+ * Verze 3 (2026-08-10, F11): přibylo nastavení na třech úrovních —
+ * globální, per karta a poplatky stanic.
  *
  * **Provozní důsledek:** zařízení se starým buildem uvidí verzi 2, přes
  * `jePrilisNovy` ji vyhodnotí jako „novější, než umím", a přestane
@@ -42,10 +47,18 @@ import type { NastaveniSkenu } from "./sken";
  * starším tvarem — ale projeví se to jako „mobil přestal ukládat", dokud
  * si nenačte novou verzi aplikace.
  */
-export const VERZE_BALICKU = 2;
+export const VERZE_BALICKU = 3;
 
 interface DataServeru {
   nastaveni?: Partial<NastaveniSkenu>;
+  /**
+   * Nastavení na třech úrovních (od verze 3).
+   *
+   * Patří k serveru stejně jako ceny: poplatky stanic na `west` nevypovídají
+   * o stavbách na `europe`. Ve starším balíčku chybí — pak se odvodí
+   * migrací ze `nastaveni` výš, takže se uživateli nic nezmění.
+   */
+  nastaveniAplikace?: NastaveniAplikace;
   rucniCeny: UlozenaCena[];
 }
 
@@ -102,7 +115,13 @@ export function sesbirej(): DataBalicku {
     const rucni = ceny.filter((c) => c.zdroj === "rucne");
     // Prázdný server se do balíčku nepíše — ať je vidět, co uživatel
     // opravdu používá, a balíček zbytečně nebobtná.
-    if (rucni.length > 0 || nastaveni) servery[s] = { nastaveni, rucniCeny: rucni };
+    // `nactiNastaveni` si poradí i s tím, že nové nastavení ještě neexistuje
+    // — odvodí ho ze starého společného, takže se na druhém zařízení
+    // neobjeví výchozí hodnoty místo těch nastavených.
+    const nastaveniAplikace = nactiNastaveni(s);
+    if (rucni.length > 0 || nastaveni) {
+      servery[s] = { nastaveni, nastaveniAplikace, rucniCeny: rucni };
+    }
   }
   return {
     dilna: nactiDilnu(), presety: nactiPresety(),
@@ -135,6 +154,11 @@ export function pouzij(data: DataBalicku): void {
     const stazene = stavajici.ceny.filter((c) => c.zdroj !== "rucne");
     // Bez odkladu — jinak by zápis dalšího serveru zrušil ten předchozí.
     ulozIhned(s, ze.nastaveni ?? stavajici.nastaveni ?? {}, [...stazene, ...ze.rucniCeny]);
+
+    // Balíček verze 1 a 2 tuhle část nemá. Nechat ji být je správně:
+    // `nactiNastaveni` ji příště odvodí ze `nastaveni` výš, kdežto zápis
+    // prázdné hodnoty by uživateli shodil poplatky stanic na výchozí.
+    if (ze.nastaveniAplikace) ulozNastaveni(s, ocistiNastaveni(ze.nastaveniAplikace));
   }
 }
 

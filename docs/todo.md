@@ -7,6 +7,24 @@ Věci, které nejsou blokující, ale je potřeba je někdy dořešit.
 
 ## 🟡 Střední priorita
 
+### 0. Sazby stanic zastarávají a nejde to poznat
+
+**Stav:** zapsáno 2026-08-10 při F11 (viz [f11-plan.md](f11-plan.md) §5).
+
+Poplatek stanice si nastavuje majitel stavby a **v čase ho mění**. Aplikace
+sazby drží jako ruční vstup bez data platnosti, takže po týdnu můžou být
+mimo, aniž by na to cokoli upozornilo.
+
+U tržních cen se stáří sleduje a barevně označuje (`barvaStari`), u sazeb
+stanic ne. Přitom je to stejný druh údaje: ruční odhad, který zastarává.
+
+**Možné řešení:** ukládat u každé sazby čas zadání a v panelu ji po
+X dnech označit stejně jako starou cenu. Levné a konzistentní s tím,
+co už aplikace u cen dělá.
+
+**Dopad, dokud se to neudělá:** náklady na crafting i refining můžou být
+tiše vedle, a projeví se to jako „aplikace počítá jinak než hra".
+
 ### 1. Focus Cost Efficiency — jednotky se rozcházejí 100×
 
 **Stav:** odloženo (Mirek 2026-07-22: „nech jako TODO, nižší priorita")

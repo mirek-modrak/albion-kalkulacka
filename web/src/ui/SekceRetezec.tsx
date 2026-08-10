@@ -7,6 +7,7 @@ import { HRA, polozka } from "../data/hra";
 import type { SkladCen } from "../stav/skladCen";
 import type { NastaveniSkenu } from "../stav/sken";
 import { typProNakup } from "../stav/sken";
+import { sazbaProPolozku } from "../stav/stanice";
 import { cislo, procenta } from "./format";
 
 interface Props {
@@ -40,7 +41,11 @@ export function SekceRetezec(p: Props) {
       { mesto: p.mesto, focus: p.nastaveni.focus, denniBonus: p.nastaveni.denniBonus },
       p.lokace, pol.druh === "surovina", pol.kategorie, HRA.konstanty.bonusFocus,
     ).bonusCelkem,
-    sazbaStanice: p.nastaveni.sazbaStanice,
+    // Sazba té stanice, kde se vyrábí dané patro. Meč ve Warrior's Forge,
+    // ingot pod ním v Tavírně — sazba vrcholu by ostatní patra zkreslila.
+    sazbaStanice: (pol) => (p.nastaveni.sazbyStanic
+      ? sazbaProPolozku(p.nastaveni.sazbyStanic, pol)
+      : p.nastaveni.sazbaStanice),
     konstanty: HRA.konstanty,
   }), [p.polozka.zaklad, p.enchant, p.mesto, p.lokace, p.sklad, p.nastaveni, p.verzeCen]);
 

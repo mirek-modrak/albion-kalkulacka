@@ -27,6 +27,7 @@ import { BLACK_MARKET, LINKY, MESTA, lokace, polozka, refinedKombinace } from ".
 import type { Kombinace, Linka } from "../data/hra";
 import { SUROVINY_ID } from "../data/kategorie";
 import { stariHodin } from "../data/aodp";
+import { sazbaProPolozku } from "./stanice";
 import {
   spocitatSken, typProNakup, typProProdej,
   type NastaveniSkenu, type RadekSkenu, type RezimCeny,
@@ -604,7 +605,9 @@ function retezecNizsihoTieru(
       },
       lok, true, p.kategorie, k.konstanty.bonusFocus,
     ).bonusCelkem,
-    sazbaStanice: k.nastaveni.sazbaStanice,
+    // Každé patro řetězu má svou stanici — T5 ingot i T4 ingot pod ním
+    // se tavějí v Tavírně, ale obecně to platit nemusí.
+    sazbaStanice: (p: HerniPolozka) => sazbaProPolozku(k.nastaveni.sazbyStanic ?? {}, p),
     konstanty: k.konstanty,
   });
 }
