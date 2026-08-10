@@ -19,8 +19,13 @@ export type SloupecId =
   | "kdeKam" | "prodej" | "zisk" | "marze" | "ziskNaKus" | "ziskNaKg" | "ziskNaFocus"
   | "naklad" | "trzba" | "likvidita" | "stari" | "tier";
 
-export interface DefiniceSloupce {
-  id: SloupecId;
+/**
+ * @template Id  množina id sloupců té které karty. Výchozí je Dílna;
+ *   Refining má vlastní seznam, protože „Kde → kam" a Black Market
+ *   u něj nedávají smysl a naopak mu chybí tři města.
+ */
+export interface DefiniceSloupce<Id extends string = SloupecId> {
+  id: Id;
   nazev: string;
   /** Čísla vpravo, text vlevo. */
   vpravo?: boolean;

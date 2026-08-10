@@ -22,7 +22,7 @@ import { SERVERY, type Server } from "../data/aodp";
 import { METRIKY, type Metrika } from "./sken";
 import { METRIKY_PREVOZU as SEZNAM_METRIK_PREVOZU, type MetrikaPrevozu } from "./prevoz";
 
-export type Rezim = "mesto" | "prilezitosti" | "prevoz" | "dilna";
+export type Rezim = "mesto" | "prilezitosti" | "prevoz" | "dilna" | "refining";
 
 export interface Predvolby {
   server: Server;
@@ -49,7 +49,7 @@ export function vychoziPredvolby(vychoziNosnostKg: number): Predvolby {
 
 const KLIC = "albion:predvolby:v1";
 
-const REZIMY: Rezim[] = ["mesto", "prilezitosti", "prevoz", "dilna"];
+const REZIMY: Rezim[] = ["mesto", "prilezitosti", "prevoz", "dilna", "refining"];
 const METRIKY_PREVOZU: MetrikaPrevozu[] = SEZNAM_METRIK_PREVOZU.map((x) => x.id);
 
 /** Vezmi uloženou hodnotu, jen když dává smysl. Jinak výchozí. */

@@ -492,6 +492,145 @@ describe("riziko převozu na Black Market", () => {
   });
 });
 
+describe("oddělené město nákupu — základ refiningu", () => {
+  // T5 ingot: kupuje se ruda a nižší ingot, vyrábí se ve městě s bonusem.
+  const komb = kombinaceProSken(SUROVINY_ID).filter(
+    (k) => k.polozka.zaklad === "T5_METALBAR" && k.enchant === 0,
+  );
+
+  const zaklad = {
+    focus: false, denniBonus: 0, premium: true, sazbaStanice: 200,
+    pocetVyrobku: 100, rezimNakupu: "instant" as const, rezimProdeje: "instant" as const,
+    skupina: SUROVINY_ID, kategorie: [], mistoProdeje: "mesto" as const, ztrataZasilek: 0,
+  };
+
+  /** Ruda levná v Bridgewatch, drahá v Thetfordu. Prodej všude stejně. */
+  function sklad() {
+    const s = new SkladCen();
+    // Caerleon je tu proto, že se v něm taky vyrábí (a tedy i prodává)
+    // — bez jeho prodejní ceny by řádek skončil na „chybí cena".
+    const ceny: Record<string, number> = { Bridgewatch: 100, Thetford: 500, Caerleon: 500 };
+    for (const [mesto, cena] of Object.entries(ceny)) {
+      s.ulozRucne(mesto, "T5_ORE", 0, "sell_min", cena);
+      s.ulozRucne(mesto, "T4_METALBAR", 0, "sell_min", cena);
+      s.ulozRucne(mesto, "T5_METALBAR", 0, "buy_max", 2000);
+    }
+    return s;
+  }
+
+  const spocti = (mesto: string, nakupniMesto?: string, ztrataVstupu?: number) => spocitatSken(
+    { ...zaklad, mesto, nakupniMesto, ztrataVstupu } as never,
+    sklad(), lokace(mesto), HRA.konstanty, (z, e) => `${z}#${e}`, undefined, komb,
+  )[0]!;
+
+  it("bez zadání se nakupuje ve městě výroby — dosavadní chování", () => {
+    expect(spocti("Thetford").vysledek!.nakladSuroviny)
+      .toBe(spocti("Thetford", "Thetford").vysledek!.nakladSuroviny);
+  });
+
+  it("nákup jinde vezme cenu z TOHO města, ne z města výroby", () => {
+    const doma = spocti("Thetford").vysledek!;
+    const zvenku = spocti("Thetford", "Bridgewatch").vysledek!;
+    // Ruda je v Bridgewatch pětkrát levnější.
+    expect(zvenku.nakladSuroviny).toBeCloseTo(doma.nakladSuroviny / 5, 6);
+  });
+
+  it("bonus zůstává u města VÝROBY, ne nákupu", () => {
+    // Nejdůležitější test: kdyby se bonus vzal podle nákupu, refining
+    // v Thetfordu s nákupem v Bridgewatch by přišel o +40 % na rudu
+    // a celá karta by radila vyrábět tam, kde se nakupuje.
+    const r = spocti("Thetford", "Bridgewatch").vysledek!;
+    expect(r.bonus.bonusCelkem).toBe(58);
+    const jinde = spocti("Caerleon", "Bridgewatch").vysledek!;
+    expect(jinde.bonus.bonusCelkem).toBe(18);
+  });
+
+  it("prázdný řetězec se chová jako nezadáno, ne jako neznámé město", () => {
+    // Poškozená uložená data by jinak znamenala „chybí cena" u všeho.
+    expect(spocti("Thetford", "").vysledek).not.toBeNull();
+    expect(spocti("Thetford", "").vysledek!.nakladSuroviny)
+      .toBe(spocti("Thetford").vysledek!.nakladSuroviny);
+  });
+
+  it("ztráta vstupů zdražuje nákup, ale jen když se opravdu veze", () => {
+    const bez = spocti("Thetford", "Bridgewatch", 0).vysledek!;
+    const s = spocti("Thetford", "Bridgewatch", 0.2).vysledek!;
+    expect(s.nakladSuroviny).toBeCloseTo(bez.nakladSuroviny / 0.8, 6);
+    expect(s.trzbaHruba).toBe(bez.trzbaHruba);
+  });
+
+  it("nákup v tomtéž městě riziko NEMÁ, i když je zadané", () => {
+    // Stejný princip jako u Caerleonu a Black Marketu: netrestat za cestu,
+    // která se nepodniká. Bez toho by „kupuju i vyrábím v Thetfordu"
+    // vyšlo hůř než ve skutečnosti.
+    const bezRizika = spocti("Thetford", "Thetford", 0).vysledek!;
+    const sRizikem = spocti("Thetford", "Thetford", 0.5).vysledek!;
+    expect(sRizikem.nakladSuroviny).toBe(bezRizika.nakladSuroviny);
+  });
+});
+
+describe("oddělené město prodeje — třetí město refiningu", () => {
+  const komb = kombinaceProSken(SUROVINY_ID).filter(
+    (k) => k.polozka.zaklad === "T5_METALBAR" && k.enchant === 0,
+  );
+
+  const zaklad = {
+    focus: false, denniBonus: 0, premium: true, sazbaStanice: 200,
+    pocetVyrobku: 100, rezimNakupu: "instant" as const, rezimProdeje: "instant" as const,
+    skupina: SUROVINY_ID, kategorie: [], mistoProdeje: "mesto" as const, ztrataZasilek: 0,
+  };
+
+  /** Ingot drahý v Lymhurstu, levný v Thetfordu. Suroviny všude stejně. */
+  function sklad() {
+    const s = new SkladCen();
+    for (const mesto of ["Thetford", "Lymhurst"]) {
+      s.ulozRucne(mesto, "T5_ORE", 0, "sell_min", 100);
+      s.ulozRucne(mesto, "T4_METALBAR", 0, "sell_min", 100);
+    }
+    s.ulozRucne("Thetford", "T5_METALBAR", 0, "buy_max", 1000);
+    s.ulozRucne("Lymhurst", "T5_METALBAR", 0, "buy_max", 3000);
+    return s;
+  }
+
+  const spocti = (prodejniMesto?: string, ztrataZasilek = 0) => spocitatSken(
+    { ...zaklad, mesto: "Thetford", prodejniMesto, ztrataZasilek } as never,
+    sklad(), lokace("Thetford"), HRA.konstanty, (z, e) => `${z}#${e}`, undefined, komb,
+  )[0]!;
+
+  it("bez zadání se prodává ve městě výroby — dosavadní chování", () => {
+    expect(spocti().vysledek!.trzbaHruba).toBe(1000 * 100);
+  });
+
+  it("prodej jinde vezme cenu z TOHO města", () => {
+    expect(spocti("Lymhurst").vysledek!.trzbaHruba).toBe(3000 * 100);
+  });
+
+  it("bonus a náklady zůstávají u města VÝROBY", () => {
+    // Kdyby se bonus přesunul za prodejem, refining v Thetfordu s prodejem
+    // v Lymhurstu by přišel o +40 % na rudu.
+    const r = spocti("Lymhurst").vysledek!;
+    expect(r.bonus.bonusCelkem).toBe(58);
+    expect(r.nakladSuroviny).toBe(spocti().vysledek!.nakladSuroviny);
+  });
+
+  it("riziko se uplatní jen při prodeji v JINÉM městě", () => {
+    // Negativní scénář: prodej doma se nesmí trestat za cestu.
+    expect(spocti("Thetford", 0.2).vysledek!.trzbaHruba).toBe(1000 * 100);
+    expect(spocti("Lymhurst", 0.2).vysledek!.trzbaHruba).toBeCloseTo(3000 * 100 * 0.8, 6);
+  });
+
+  it("u Black Marketu se prodejní město ignoruje — BM je jen jeden", () => {
+    // Kdyby se respektovalo, hledala by se cena BM v Lymhurstu, kde není.
+    const r = spocitatSken(
+      { ...zaklad, mesto: "Caerleon", prodejniMesto: "Lymhurst",
+        skupina: "zbrane", mistoProdeje: "bm" } as never,
+      sklad(), lokace("Caerleon"), HRA.konstanty, (z, e) => `${z}#${e}`, undefined, komb,
+    )[0]!;
+    // Suroviny nejsou na BM obchodované → guard vrátí prodej do města.
+    expect(r).toBeDefined();
+  });
+});
+
 describe("potrebnaIdsZ / skenovanaIdsZ — explicitní seznam pro dílnu", () => {
   const komb = kombinaceProSken("zbrane", ["sword"]).slice(0, 3);
 

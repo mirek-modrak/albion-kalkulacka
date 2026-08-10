@@ -26,6 +26,11 @@ import {
   type StavDilny,
 } from "./stav/dilna";
 import { TabDilna } from "./ui/TabDilna";
+import {
+  kombinaceZKlicuRefiningu, nactiRefining, poRucniProdejniCene, souhrnRefiningu,
+  ulozRefining, vyhodnotitRefining, type StavRefiningu,
+} from "./stav/refining";
+import { TabRefining } from "./ui/TabRefining";
 import { seraditPrevozy, souhrnPrevozu, spocitatPrevozy, type MetrikaPrevozu } from "./stav/prevoz";
 import { TabulkaPrevozu } from "./ui/TabulkaPrevozu";
 import { PanelPrevozu } from "./ui/PanelPrevozu";
@@ -128,6 +133,15 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const [dilna, setDilna] = useState<StavDilny>(() => nactiDilnu());
   const dilnaKombinace = useMemo(() => kombinaceZKlicu(dilna.klice), [dilna.klice]);
   const upravDilnu = (s: StavDilny) => { setDilna(s); ulozDilnu(s); };
+  // Refining: kurátorský seznam surovin a tří měst (koupit / refinovat /
+  // prodat). Nezávislé na serveru, stejně jako dílna — „co refinuju" je
+  // volba, ne ekonomika.
+  const [refining, setRefining] = useState<StavRefiningu>(() => nactiRefining());
+  const refiningKombinace = useMemo(
+    () => kombinaceZKlicuRefiningu(refining.klice), [refining.klice],
+  );
+  const upravRefining = (s: StavRefiningu) => { setRefining(s); ulozRefining(s); };
+
   // Otevřený dialog „co s ručními cenami" při stažení v dílně. Null = zavřený.
   const [refreshManualy, setRefreshManualy] = useState<UlozenaCena[] | null>(null);
 
@@ -178,12 +192,17 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   rezimRef.current = rezim;
   const dilnaKombinaceRef = useRef(dilnaKombinace);
   dilnaKombinaceRef.current = dilnaKombinace;
+  const refiningKombinaceRef = useRef(refiningKombinace);
+  refiningKombinaceRef.current = refiningKombinace;
 
   async function spustitSken(preskocitDialog = false) {
-    // V dílně se před stažením zeptáme, co s ručně zadanými cenami —
-    // ať uživatel neztratí ceny, které si zapsal z tržnice, ani nemusí
-    // ručně obcházet každou, když je chce naopak obnovit.
-    if (rezimRef.current === "dilna" && preskocitDialog !== true) {
+    // V dílně a v refiningu se před stažením zeptáme, co s ručně zadanými
+    // cenami — ať uživatel neztratí ceny, které si zapsal z tržnice, ani
+    // nemusí ručně obcházet každou, když je chce naopak obnovit.
+    // Obě karty stojí na kurátorském seznamu, kde ruční ceny dávají smysl;
+    // u skenů se jich zadává málo a dialog by jen otravoval.
+    const seSeznamem = rezimRef.current === "dilna" || rezimRef.current === "refining";
+    if (seSeznamem && preskocitDialog !== true) {
       const manualy = skladRef.current.export().filter((c) => c.zdroj === "rucne");
       if (manualy.length > 0) { setRefreshManualy(manualy); return; }
     }
@@ -199,9 +218,12 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
       // Dílna tahá jen vybrané položky, ale ze VŠECH měst + Black Marketu —
       // vyrábět se dá kdekoli (i „nejlevnější") a prodávat lokálně nebo na BM.
       const jeDilna = rezimRef.current === "dilna";
+      const jeRefining = rezimRef.current === "refining";
       const ids = jeDilna
         ? potrebnaIdsZ(dilnaKombinaceRef.current)
-        : potrebnaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
+        : jeRefining
+          ? potrebnaIdsZ(refiningKombinaceRef.current)
+          : potrebnaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
 
       // V režimu příležitostí se tahají všechna města naráz. Nestojí to víc
       // dotazů — AODP násobí odpověď přes `locations`, ne počet dotazů
@@ -212,14 +234,19 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
       // (ověřeno: T5 Planks i T5 Metal Bar tam mají nulový týdenní objem),
       // takže u refiningu by to byla jen osmina přenosu navíc pro nic.
       const bmVHre = lzeProdatNaBM("Caerleon", nastaveniRef.current.skupina);
-      const mesta = jeDilna
-        ? [...MESTA.map((m) => m.nazev), BLACK_MARKET]
-        : [
-            ...(rezimRef.current === "mesto"
-              ? [nastaveniRef.current.mesto]
-              : MESTA.map((m) => m.nazev)),
-            ...(bmVHre ? [BLACK_MARKET] : []),
-          ];
+      // Refining tahá všech 7 měst, ale Black Market NE: refined suroviny
+      // na něm mají nulový objem (ověřeno ve F5), takže by to byla osmina
+      // přenosu navíc pro ceny, se kterými se stejně nesmí počítat.
+      const mesta = jeRefining
+        ? MESTA.map((m) => m.nazev)
+        : jeDilna
+          ? [...MESTA.map((m) => m.nazev), BLACK_MARKET]
+          : [
+              ...(rezimRef.current === "mesto"
+                ? [nastaveniRef.current.mesto]
+                : MESTA.map((m) => m.nazev)),
+              ...(bmVHre ? [BLACK_MARKET] : []),
+            ];
 
       const radky = await nactiCeny(
         serverRef.current, ids, mesta, [1], rizeni.signal,
@@ -248,7 +275,9 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
         // medián mohl sloužit jako zdroj ceny surovin, ne jen výrobku.
         const idsHistorie = jeDilna
           ? potrebnaIdsZ(dilnaKombinaceRef.current)
-          : skenovanaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
+          : jeRefining
+            ? potrebnaIdsZ(refiningKombinaceRef.current)
+            : skenovanaIds(nastaveniRef.current.skupina, nastaveniRef.current.kategorie);
         setStav({ druh: "bezi", hotovo: 0, celkem: 1, faze: "historie" });
 
         const serie = await nactiHistoriiDavkove(
@@ -306,6 +335,20 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
     ),
     // dilnaKombinace v závislostech drží přepočet při změně seznamu i konfigurace.
     [rezim, nastaveni, verzeCen, dilna, dilnaKombinace],
+  );
+
+  // Refining: každá surovina pod svou trojicí měst. Naměřeno 2026-08-10:
+  // nejhorší případ (115 surovin × 7 měst refiningu × 7 měst nákupu)
+  // stojí 23 ms, takže strop na počet řádků není potřeba.
+  const refiningVysledky = useMemo(
+    () => rezim !== "refining" ? [] : vyhodnotitRefining(
+      refining, skladRef.current, historieRef.current, HRA.konstanty, nastaveni,
+      nazevPolozky, nastaveniPrevozu.nosnostKg, maxStari,
+    ),
+    // maxStari je v závislostech schválně: řídí, které ceny smí auto-výběr
+    // použít, takže jeho změna musí přepočítat, ne jen přefiltrovat.
+    [rezim, nastaveni, verzeCen, refining, refiningKombinace,
+      nastaveniPrevozu.nosnostKg, maxStari],
   );
 
   // Příležitosti napříč městy. Počítá se jen v odpovídajícím režimu —
@@ -400,6 +443,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
 
   const s = souhrn(radky);
   const sP = souhrnPrilezitosti(prilezitosti);
+  const sR = souhrnRefiningu(refiningVysledky);
 
   /**
    * Na kolik jízd mountu se dávka veze.
@@ -427,6 +471,9 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const detailDilna = detailKlic
     ? dilnaVysledky.find((v) => v.klic === detailKlic) ?? null
     : null;
+  const detailRefining = detailKlic
+    ? refiningVysledky.find((v) => v.klic === detailKlic) ?? null
+    : null;
 
   return (
     <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
@@ -448,6 +495,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
           ["mesto", "Sken jednoho města", "podrobněji"],
           ["prevoz", "Převoz", "co koupit tady a prodat jinde"],
           ["dilna", "Dílna", "moje výroba"],
+          ["refining", "Refining", "kde koupit, kde refinovat, kde prodat"],
         ] as const).map(([id, popis, dovetek]) => (
           <button key={id} onClick={() => { setRezim(id); setDetailKlic(null); }}
                   className={`rounded-md px-3 py-1.5 text-sm ${rezim === id
@@ -494,6 +542,36 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
             <TabulkaPrevozu radky={filtrovanePrevozy} metrika={metrikaPrevozu}
                             vychoziMesto={nastaveniPrevozu.vychoziMesto}
                             ztrataZasilek={nastaveniPrevozu.ztrataZasilek} />
+          </div>
+        ) : rezim === "refining" ? (
+          <div className="space-y-3">
+            {sR.spocitano > 0 && (
+              <div className="rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-950">
+                <b>{sR.ziskove}</b> ziskových z {sR.spocitano} spočítaných
+                {sR.chybiCena > 0 && ` · ${sR.chybiCena} bez ceny`}
+                {sR.podleMest.length > 0 && (
+                  <div className="mt-1 text-xs text-slate-500">
+                    Refinuje se nejčastěji v:{" "}
+                    {sR.podleMest.slice(0, 3).map((m) => `${m.mesto} (${m.pocet}×)`).join(", ")}
+                    {/* Kolik voleb stojí na rozdílu v šumu — ať je vidět,
+                        že „nejlepší město" nemusí být jednoznačné. */}
+                    {sR.tesne > 0 && ` · u ${sR.tesne} je druhé město prakticky stejné`}
+                  </div>
+                )}
+              </div>
+            )}
+            <TabRefining
+              vysledky={refiningVysledky} stav={refining}
+              sklad={skladRef.current} davka={nastaveni.pocetVyrobku}
+              typNakup={typProNakup(nastaveni.rezimNakupu)}
+              rezimProdeje={nastaveni.rezimProdeje}
+              nazevPolozky={nazevPolozky}
+              uprav={upravRefining}
+              zafixujProdej={(klic, mesto) =>
+                upravRefining(poRucniProdejniCene(refining, klic, mesto))}
+              poZmeneCeny={() => setVerzeCen((v) => v + 1)}
+              otevritDetail={(klic) => setDetailKlic(klic)}
+            />
           </div>
         ) : rezim === "dilna" ? (
           <TabDilna
@@ -598,6 +676,31 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
             setVerzeCen((v) => v + 1);
             spustitSken(true);
           }}
+        />
+      )}
+
+      {/* Detail refiningu — rozpad pro TU trojici měst, kterou řádek použil.
+          Kdyby se předalo nastavení z ovládacího panelu, ukazoval by detail
+          jiná čísla než řádek, na který uživatel klikl. */}
+      {rezim === "refining" && detailRefining?.radek && (
+        <DetailPolozky
+          radek={detailRefining.radek}
+          zobrazeneMesto={detailRefining.refining}
+          server={server}
+          lokace={lokace(detailRefining.refining)}
+          nastaveni={{
+            ...nastaveni,
+            mesto: detailRefining.refining,
+            nakupniMesto: detailRefining.nakup,
+            prodejniMesto: detailRefining.prodej,
+            skupina: SUROVINY_ID,
+            mistoProdeje: "mesto",
+          }}
+          sklad={skladRef.current}
+          nazevPolozky={nazevPolozky}
+          verzeCen={verzeCen}
+          poZmeneCeny={() => setVerzeCen((v) => v + 1)}
+          zavrit={() => setDetailKlic(null)}
         />
       )}
 

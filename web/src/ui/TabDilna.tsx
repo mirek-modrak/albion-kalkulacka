@@ -29,7 +29,7 @@ import {
   vychoziSmer, type NastaveniFiltru,
 } from "../stav/filtrDilny";
 import {
-  nactiSkryte, prepniSloupec, skryvamePodleCehoRadime, ulozSkryte, viditelne,
+  SLOUPCE, nactiSkryte, prepniSloupec, skryvamePodleCehoRadime, ulozSkryte, viditelne,
   type SloupecId,
 } from "../stav/sloupceDilny";
 import { FiltrDilny } from "./FiltrDilny";
@@ -133,7 +133,7 @@ export function TabDilna(p: Props) {
                       enchanty={dostupneEnchanty(p.vysledky)}
                       skryto={skryto} zobrazeno={zobrazene.length} />
 
-          <VolbaSloupcu skryte={skryteSloupce} prepni={prepniSloupecUI} />
+          <VolbaSloupcu sloupce={SLOUPCE} skryte={skryteSloupce} prepni={prepniSloupecUI} />
 
           {zobrazene.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center

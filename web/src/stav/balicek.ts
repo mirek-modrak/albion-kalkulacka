@@ -4,8 +4,9 @@
  * Prostředník mezi úložištěm v prohlížeči a [sync.ts](./sync.ts). Díky němu
  * adaptér neví nic o vnitřnostech aplikace a aplikace neví nic o Firebase.
  *
- * **Co se synchronizuje** (viz f9b-plan.md):
+ * **Co se synchronizuje** (viz f9b-plan.md, f10-plan.md):
  * - dílna (seznam položek, konfigurace, přepisy) a presety — vlastní práce
+ * - refining (seznam surovin, tři města, přepisy) a jeho presety — totéž
  * - ručně zadané ceny — taky vlastní práce, ty se nikdy nezahazují
  * - nastavení skenu — drobnost, ale otravné vyplňovat znovu
  *
@@ -18,6 +19,11 @@
 
 import { SERVERY, type Server } from "../data/aodp";
 import { nactiDilnu, nactiPresety, ulozDilnu, ulozPresety, type Preset, type StavDilny } from "./dilna";
+import {
+  PRAZDNY_REFINING, nactiPresetyRefiningu, nactiRefining, ocistiStavRefiningu,
+  ulozPresetyRefiningu, ulozRefining,
+  type PresetRefiningu, type StavRefiningu,
+} from "./refining";
 import { nacti, ulozIhned, type UlozenaCena } from "./uloziste";
 import type { NastaveniSkenu } from "./sken";
 
@@ -27,8 +33,16 @@ import type { NastaveniSkenu } from "./sken";
  * Na rozdíl od úložiště v prohlížeči se serverová data při neshodě verzí
  * **nezahazují** — jsou to hodiny cizí práce. Starší tvar se převede,
  * novější tvar se odmítne číst (viz `PORAD_NOVEJSI`).
+ *
+ * Verze 2 (2026-08-10, F10): přibyl refining a jeho presety.
+ *
+ * **Provozní důsledek:** zařízení se starým buildem uvidí verzi 2, přes
+ * `jePrilisNovy` ji vyhodnotí jako „novější, než umím", a přestane
+ * zapisovat (číst bude dál). Je to správně — chrání to data před přepsáním
+ * starším tvarem — ale projeví se to jako „mobil přestal ukládat", dokud
+ * si nenačte novou verzi aplikace.
  */
-export const VERZE_BALICKU = 1;
+export const VERZE_BALICKU = 2;
 
 interface DataServeru {
   nastaveni?: Partial<NastaveniSkenu>;
@@ -38,6 +52,9 @@ interface DataServeru {
 export interface DataBalicku {
   dilna: StavDilny;
   presety: Preset[];
+  /** Od verze 2. Ve starším balíčku chybí — pak se bere prázdný. */
+  refining: StavRefiningu;
+  presetyRefiningu: PresetRefiningu[];
   servery: Partial<Record<Server, DataServeru>>;
 }
 
@@ -87,7 +104,11 @@ export function sesbirej(): DataBalicku {
     // opravdu používá, a balíček zbytečně nebobtná.
     if (rucni.length > 0 || nastaveni) servery[s] = { nastaveni, rucniCeny: rucni };
   }
-  return { dilna: nactiDilnu(), presety: nactiPresety(), servery };
+  return {
+    dilna: nactiDilnu(), presety: nactiPresety(),
+    refining: nactiRefining(), presetyRefiningu: nactiPresetyRefiningu(),
+    servery,
+  };
 }
 
 /**
@@ -101,6 +122,12 @@ export function pouzij(data: DataBalicku): void {
   ulozDilnu(data.dilna);
   ulozPresety(data.presety);
 
+  // Balíček verze 1 refining nemá. Nesmí se z toho stát `undefined`
+  // v úložišti — karta by pak nastartovala do prázdna a vypadalo by to,
+  // že se seznam ztratil.
+  ulozRefining(data.refining ? ocistiStavRefiningu(data.refining) : PRAZDNY_REFINING);
+  ulozPresetyRefiningu(Array.isArray(data.presetyRefiningu) ? data.presetyRefiningu : []);
+
   for (const { id: s } of SERVERY) {
     const ze = data.servery[s];
     if (!ze) continue;
@@ -111,11 +138,20 @@ export function pouzij(data: DataBalicku): void {
   }
 }
 
-/** Je v balíčku vůbec něco, co by stálo za řeč? */
+/**
+ * Je v balíčku vůbec něco, co by stálo za řeč?
+ *
+ * **Musí znát KAŽDOU část balíčku.** Podle téhle funkce se rozhoduje, jestli
+ * se uživateli nabídne přepsat jeho data serverovými (a naopak). Kdyby na
+ * refining zapomněla, hlásil by se balíček s padesáti surovinami jako
+ * „prázdné" a dialog by nabídl zahodit hodiny práce.
+ */
 export function jePrazdny(data: DataBalicku | null | undefined): boolean {
   if (!data) return true;
   if (data.dilna?.klice?.length) return false;
   if (data.presety?.length) return false;
+  if (data.refining?.klice?.length) return false;
+  if (data.presetyRefiningu?.length) return false;
   return !Object.values(data.servery ?? {}).some((s) => s && s.rucniCeny.length > 0);
 }
 
@@ -126,7 +162,10 @@ export function popis(data: DataBalicku | null | undefined): string {
   const casti: string[] = [];
   const polozek = d.dilna?.klice?.length ?? 0;
   if (polozek) casti.push(`${polozek} položek v dílně`);
-  if (d.presety?.length) casti.push(`${d.presety.length} presetů`);
+  const surovin = d.refining?.klice?.length ?? 0;
+  if (surovin) casti.push(`${surovin} surovin v refiningu`);
+  const presetu = (d.presety?.length ?? 0) + (d.presetyRefiningu?.length ?? 0);
+  if (presetu) casti.push(`${presetu} presetů`);
   const cen = Object.values(d.servery ?? {}).reduce((n, s) => n + (s?.rucniCeny.length ?? 0), 0);
   if (cen) casti.push(`${cen} ručních cen`);
   return casti.join(", ");

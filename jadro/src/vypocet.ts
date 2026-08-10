@@ -42,6 +42,25 @@ export interface ZadaniVypoctu {
    * neprodá, ale vyrobit se to muselo. Stejný model jako `spocitatPrevoz`.
    */
   ztrataZasilek?: number;
+  /**
+   * Podíl surovin ztracených cestou DO dílny, 0–1.
+   *
+   * Nenulové, když se nakupuje jinde, než se vyrábí — typicky refining:
+   * rudu koupíš, kde je levná, a vezeš ji do města s bonusem na rudu.
+   * Odhad uživatele, v datech to není.
+   *
+   * **Působí opačným směrem než `ztrataZasilek` a právě proto je to
+   * druhé pole, ne totéž:**
+   *
+   *   | ztratí se cestou   | co se stane                | co se změní |
+   *   |--------------------|----------------------------|-------------|
+   *   | surovina do dílny  | musíš koupit víc           | NÁKLAD ↑    |
+   *   | výrobek na trh     | neprodáš ho, ale vyrobils  | TRŽBA ↓     |
+   *
+   * Použít jedno místo druhého dá tiše špatná čísla, která vypadají
+   * rozumně — nespadne to, jen to lže.
+   */
+  ztrataVstupu?: number;
 }
 
 export interface RadekVstupu {
@@ -92,6 +111,19 @@ export interface VysledekVypoctu {
   ziskNaFocus: number | null;
 
   vahaVstupu: number;
+  /**
+   * Váha toho, co opravdu KOUPÍŠ a povezeš — včetně ztráty cestou.
+   *
+   * Liší se od `vahaVstupu`, protože ta počítá nominální spotřebu receptu.
+   * Vrácené suroviny vznikají až u stanice, takže je z tržnice nevezeš:
+   * na 1000 T5 ingotů recept žádá 3000 rudy, ale koupit a přivézt jich
+   * musíš jen 1899. U refiningu, kde se ruda vozí přes půl mapy, je to
+   * rozdíl mezi jednou a dvěma jízdami.
+   *
+   * `vahaVstupu` zůstává, jak byla — mění se jen to, že přibylo druhé,
+   * poctivější číslo pro logistiku.
+   */
+  vahaNakupu: number;
   vahaVystupu: number;
   /** Zisk na kilogram výstupu. Rozhodující, když je limitem nosnost mountu. */
   ziskNaKg: number | null;
@@ -123,9 +155,18 @@ export function spocitat(
   );
 
   // ── Vstupy ────────────────────────────────────────────────
+  //
+  // Ztráta cestou do dílny zdražuje NÁKUP: aby se do stanice dostalo,
+  // co recept potřebuje, musíš koupit víc. Ořez na 0,99 proto, že při
+  // 100 % by byl náklad nekonečný a výsledek by přestal být číslo —
+  // ztratit úplně všechno není případ, který má smysl počítat.
+  const ztrataVst = Math.min(Math.max(z.ztrataVstupu ?? 0, 0), 0.99);
+  const faktorNakupu = 1 / (1 - ztrataVst);
+
   const vstupy: RadekVstupu[] = [];
   let nakladSuroviny = 0;
   let vahaVstupuCelkem = 0;
+  let vahaNakupuCelkem = 0;
 
   for (const vstup of varianta.vstupy) {
     const cena = z.cenyVstupu.get(klic(vstup.zaklad, vstup.enchant));
@@ -133,15 +174,21 @@ export function spocitat(
       return { ok: false, chyba: { druh: "chybi-cena", zaklad: vstup.zaklad, enchant: vstup.enchant } };
     }
 
-    const { nominalne, efektivne } = spotrebaVstupu(
+    const { nominalne, efektivne: spotrebovane } = spotrebaVstupu(
       vstup, varianta, z.pocetVyrobku, bonus.returnRate,
     );
+    // Co se cestou ztratí, musíš dokoupit. `efektivne` je proto „kolik
+    // toho reálně kupuješ", ne „kolik toho stanice spotřebuje" — a přesně
+    // tohle číslo patří do nákupního seznamu.
+    const efektivne = spotrebovane * faktorNakupu;
     const naklad = efektivne * cena.hodnota;
 
     nakladSuroviny += naklad;
     // Váha se počítá z NOMINÁLNÍ spotřeby — na mount musíš naložit všechno,
     // co recept spotřebuje. To, že se ti část vrátí, ti cestou nepomůže.
     vahaVstupuCelkem += nominalne * vahaVstupu(vstup);
+    // Váha nákupu naproti tomu odpovídá tomu, co opravdu koupíš a povezeš.
+    vahaNakupuCelkem += efektivne * vahaVstupu(vstup);
 
     vstupy.push({
       zaklad: vstup.zaklad, enchant: vstup.enchant, vratna: vstup.vratna,
@@ -214,6 +261,7 @@ export function spocitat(
       focus,
       ziskNaFocus: focus > 0 ? zisk / focus : null,
       vahaVstupu: vahaVstupuCelkem,
+      vahaNakupu: vahaNakupuCelkem,
       vahaVystupu: vahaVystupuCelkem,
       ziskNaKg: vahaVystupuCelkem > 0 ? zisk / vahaVystupuCelkem : null,
     },

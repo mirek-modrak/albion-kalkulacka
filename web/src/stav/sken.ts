@@ -40,6 +40,35 @@ export interface NastaveniSkenu {
    * a ani tam ne při výrobě v Caerleonu — odtud se nikam nejede.
    */
   ztrataZasilek: number;
+  /**
+   * Kde se kupují vstupy, pokud jinde než ve městě výroby.
+   *
+   * **Chybí = kupuje se ve městě výroby**, tedy dosavadní chování. Sken,
+   * Příležitosti i Dílna pole nenastavují a počítají přesně jako dřív;
+   * odděleně ho potřebuje jen refining, kde se ruda kupuje jinde,
+   * než se refinuje.
+   */
+  nakupniMesto?: string;
+  /**
+   * Kde se prodává výstup, pokud jinde než ve městě výroby.
+   *
+   * **Chybí = prodává se ve městě výroby.** Neplést s `mistoProdeje`:
+   * to odpovídá na otázku „tržnice, nebo Black Market", tohle na otázku
+   * „ve kterém městě". Když je `mistoProdeje` Black Market, tohle pole
+   * se ignoruje — BM je jen jeden a leží v Caerleonu.
+   *
+   * Názvy jsou schválně `nakupniMesto` / `prodejniMesto`, ne `mestoProdeje`:
+   * to by se od `mistoProdeje` lišilo jediným písmenem a plést by se to
+   * začalo první den.
+   */
+  prodejniMesto?: string;
+  /**
+   * Podíl surovin ztracených cestou z místa nákupu do dílny, 0–1.
+   *
+   * Zdražuje NÁKUP (musíš koupit víc), zatímco `ztrataZasilek` snižuje
+   * TRŽBU. Viz `ztrataVstupu` v jádru — jsou to dvě různé věci.
+   */
+  ztrataVstupu?: number;
 }
 
 /**
@@ -265,7 +294,18 @@ export function spocitatSken(
     // Bez převozu se na BM dostaneš jen z Caerleonu.
     && (sPrevozem || nastaveni.mesto === BLACK_MARKET_MESTO);
 
-  const mistoProdeje = naBM ? BLACK_MARKET : nastaveni.mesto;
+  // Ověřit kladnou hodnotu, ne jen `?? mesto`: uložené nastavení ze starší
+  // verze pole nemá a prázdný řetězec z poškozených dat by znamenal
+  // hledání cen ve městě, které neexistuje — tedy „chybí cena" u všeho.
+  const jineMesto = (x: string | undefined) => (x && x !== "" ? x : nastaveni.mesto);
+
+  // Kde se NAKUPUJE. Liší se od města výroby jen u refiningu, kde se
+  // surovina kupuje, kde je levná, a veze do města s bonusem.
+  const mestoNakupu = jineMesto(nastaveni.nakupniMesto);
+
+  // Kde se PRODÁVÁ. Na Black Marketu je to vždy BM (jeden jediný, v Caerleonu),
+  // jinak město výroby — nebo to, které si vyžádal refining.
+  const mistoProdeje = naBM ? BLACK_MARKET : jineMesto(nastaveni.prodejniMesto);
   const typProdej = typProdejeProMisto(nastaveni.rezimProdeje, naBM);
 
   // Na Black Marketu se neklade order, prodává se rovnou do výkupu —
@@ -274,10 +314,13 @@ export function spocitatSken(
 
   // Riziko jen když se opravdu jede. Z Caerleonu na BM se nejede nikam,
   // takže tam musí být nula — jinak by se Caerleon trestal za cestu,
-  // kterou nepodniká, a celé srovnání by bylo posunuté.
-  const ztrata = naBM && sPrevozem && nastaveni.mesto !== BLACK_MARKET_MESTO
-    ? nastaveni.ztrataZasilek
-    : 0;
+  // kterou nepodniká, a celé srovnání by bylo posunuté. Totéž pro prodej
+  // v tomtéž městě, kde se vyrábí.
+  const vezeSeNaProdej = naBM
+    ? sPrevozem && nastaveni.mesto !== BLACK_MARKET_MESTO
+    : mistoProdeje !== nastaveni.mesto;
+  const ztrata = vezeSeNaProdej ? nastaveni.ztrataZasilek : 0;
+
   const radky: RadekSkenu[] = [];
   const typNakup = typProNakup(nastaveni.rezimNakupu);
 
@@ -302,7 +345,7 @@ export function spocitatSken(
     const chybejici: string[] = [];
 
     for (const vstup of varianta.vstupy) {
-      const cena = sklad.ziskej(nastaveni.mesto, vstup.zaklad, vstup.enchant, typNakup);
+      const cena = sklad.ziskej(mestoNakupu, vstup.zaklad, vstup.enchant, typNakup);
       pouzite.push(cena);
       if (cena && cena.hodnota > 0) {
         cenyVstupu.set(`${vstup.zaklad}#${vstup.enchant}`, cena);
@@ -360,6 +403,9 @@ export function spocitatSken(
       // což podle herních pravidel není, jak Black Market funguje.
       prodejNaBlackMarketu: naBM,
       ztrataZasilek: ztrata,
+      // Totéž na nákupní straně: kdo kupuje tam, kde vyrábí, nemá co
+      // ztratit a nesmí se za cestu trestat.
+      ztrataVstupu: mestoNakupu === nastaveni.mesto ? 0 : nastaveni.ztrataVstupu,
     }, konstanty, vahaVstupu);
 
     if (!v.ok) {

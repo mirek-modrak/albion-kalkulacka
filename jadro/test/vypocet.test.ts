@@ -325,3 +325,99 @@ describe("ztráta zásilek cestou", () => {
     expect(s.ziskNaKus).toBeCloseTo(s.zisk / 100, 6);
   });
 });
+
+describe("ztráta surovin cestou do dílny", () => {
+  // Refining: rudu koupíš, kde je levná, a vezeš ji do města s bonusem.
+  // Cestou se část ztratí — a to je JINÝ směr účinku než ztráta zásilek.
+  const zaklad = {
+    polozka: najdi("T5_METALBAR"),
+    enchant: 0 as const,
+    pocetVyrobku: 100,
+    bonusy: { mesto: "Thetford", focus: false, denniBonus: 0 },
+    lokace: mesto("Thetford"),
+    cenaVystupu: cena(1000),
+    premium: true,
+    sazbaStanice: 200,
+    rezimNakupu: "instant" as const,
+    rezimProdeje: "instant" as const,
+    cenyVstupu: new Map([["T5_ORE#0", cena(400)], ["T4_METALBAR#0", cena(300)]]),
+  };
+
+  const spocti = (ztrata?: number) => {
+    const v = spocitat({ ...zaklad, ztrataVstupu: ztrata }, data.konstanty, vahaVstupu);
+    if (!v.ok) throw new Error("mělo projít");
+    return v.hodnota;
+  };
+
+  it("bez zadání se nic neztrácí — zpětná kompatibilita", () => {
+    // Zásadní: stará volání nesmí dostat jiná čísla než dřív.
+    expect(spocti().nakladSuroviny).toBe(spocti(0).nakladSuroviny);
+    expect(spocti().zisk).toBe(spocti(0).zisk);
+    expect(spocti().vahaNakupu).toBe(spocti(0).vahaNakupu);
+  });
+
+  it("ztráta zvyšuje NÁKLAD, tržba zůstává", () => {
+    // Přesný opak ztráty zásilek. Kdyby to snižovalo tržbu, byl by to
+    // druhý název pro totéž a jedno z těch dvou polí by bylo k ničemu.
+    const bez = spocti(0);
+    const s = spocti(0.2);
+    expect(s.trzbaHruba).toBe(bez.trzbaHruba);
+    expect(s.dan).toBe(bez.dan);
+    expect(s.nakladSuroviny).toBeCloseTo(bez.nakladSuroviny / 0.8, 6);
+    expect(s.zisk).toBeLessThan(bez.zisk);
+  });
+
+  it("nakupuje se víc, než recept spotřebuje", () => {
+    const bez = spocti(0);
+    const s = spocti(0.2);
+    const ruda = (v: typeof bez) => v.vstupy.find((x) => x.zaklad === "T5_ORE")!;
+
+    // Nominální spotřeba je vlastnost receptu — ztrátou se nemění.
+    expect(ruda(s).nominalne).toBe(ruda(bez).nominalne);
+    // Zato koupit musíš o pětinu víc, ať do stanice dorazí totéž.
+    expect(ruda(s).efektivne).toBeCloseTo(ruda(bez).efektivne / 0.8, 6);
+  });
+
+  it("váha nákupu roste, váha nominální spotřeby ne", () => {
+    const bez = spocti(0);
+    const s = spocti(0.2);
+    expect(s.vahaVstupu).toBe(bez.vahaVstupu);
+    expect(s.vahaNakupu).toBeCloseTo(bez.vahaNakupu / 0.8, 6);
+  });
+
+  it("váha nákupu je nižší než nominální — vrácené suroviny se nevozí", () => {
+    // Na 100 ingotů recept žádá 300 rudy, ale koupit stačí ~190.
+    // Kdyby se logistika počítala z nominální váhy, vyšla by o polovinu
+    // víc jízd, než je potřeba.
+    const s = spocti(0);
+    expect(s.vahaNakupu).toBeLessThan(s.vahaVstupu);
+  });
+
+  it("obě ztráty působí najednou a nezaměňují se", () => {
+    const jenVstup = spocitat({ ...zaklad, ztrataVstupu: 0.2 }, data.konstanty, vahaVstupu);
+    const jenVystup = spocitat({ ...zaklad, ztrataZasilek: 0.2 }, data.konstanty, vahaVstupu);
+    const obe = spocitat(
+      { ...zaklad, ztrataVstupu: 0.2, ztrataZasilek: 0.2 }, data.konstanty, vahaVstupu,
+    );
+    if (!jenVstup.ok || !jenVystup.ok || !obe.ok) throw new Error("mělo projít");
+
+    expect(obe.hodnota.nakladSuroviny).toBeCloseTo(jenVstup.hodnota.nakladSuroviny, 6);
+    expect(obe.hodnota.trzbaHruba).toBeCloseTo(jenVystup.hodnota.trzbaHruba, 6);
+    expect(obe.hodnota.zisk).toBeLessThan(jenVstup.hodnota.zisk);
+    expect(obe.hodnota.zisk).toBeLessThan(jenVystup.hodnota.zisk);
+  });
+
+  it("stoprocentní ztráta se ořeže a nevrátí Infinity ani NaN", () => {
+    // Náklad by při 100 % byl nekonečný. Ořez na 99 % je vědomý:
+    // radši drahý, ale konečný výsledek než NaN v tabulce.
+    const s = spocti(1);
+    expect(Number.isFinite(s.nakladSuroviny)).toBe(true);
+    expect(Number.isFinite(s.zisk)).toBe(true);
+    expect(s.nakladSuroviny).toBeCloseTo(spocti(0).nakladSuroviny * 100, 0);
+  });
+
+  it("nesmyslné hodnoty se ořežou, nespadne to", () => {
+    expect(spocti(-5).zisk).toBe(spocti(0).zisk);
+    expect(spocti(99).zisk).toBe(spocti(1).zisk);
+  });
+});

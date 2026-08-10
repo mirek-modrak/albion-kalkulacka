@@ -20,7 +20,7 @@ interface Props {
   jenZiskove: boolean;
   setJenZiskove: (b: boolean) => void;
   /** Který režim je aktivní — Black Market se nabízí jen ve skenu města. */
-  rezim: "mesto" | "prilezitosti" | "prevoz" | "dilna";
+  rezim: "mesto" | "prilezitosti" | "prevoz" | "dilna" | "refining";
   stav: StavSkenu;
   spustitSken: () => void;
   zrusitSken: () => void;
@@ -56,12 +56,21 @@ export function OvladaciPanel(p: Props) {
   // výsledku" ani řazení/filtry se na ni nevztahují — schovat je, ať nematou.
   const jeDilna = p.rezim === "dilna";
 
+  // Refining má stejnou vlastnost: seznam surovin i všechna tři města si
+  // nastavuje ve své hlavičce. Zdejší „Co skenovat" a „Město" by dublovaly
+  // a hlavně matly — políčko „Město (nákup, refining i prodej)" tvrdí pravý
+  // opak toho, co ta karta dělá.
+  //
+  // „Prodej výsledku" se ale schovávat NESMÍ: refined suroviny se prodávají
+  // na běžné tržnici, takže volba sell order vs. buy order platí i tam.
+  const maVlastniVyberMest = jeDilna || p.rezim === "refining";
+
   return (
     <aside className="space-y-1 rounded-xl border border-slate-200 bg-white p-4
                       dark:border-slate-800 dark:bg-slate-900">
       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nastavení</h2>
 
-      {!jeDilna && (
+      {!maVlastniVyberMest && (
         <>
           <Popisek>Co skenovat</Popisek>
           <select className={stylPole} value={p.nastaveni.skupina}
@@ -83,7 +92,7 @@ export function OvladaciPanel(p: Props) {
 
       {/* V dílně se město i prodej nastavují v její vlastní hlavičce
           („Vyrábím v / Prodávám na"), tady by to jen dublovalo a mátlo. */}
-      {!jeDilna && (
+      {!maVlastniVyberMest && (
         <>
           <Popisek>Město (nákup, refining i prodej)</Popisek>
           <select className={stylPole} value={p.nastaveni.mesto}
