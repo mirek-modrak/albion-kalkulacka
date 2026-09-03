@@ -215,14 +215,26 @@ export function DetailPolozky(p: Props) {
           {varianta?.vstupy.map((vstup) => (
             <RadekCeny
               key={`${vstup.zaklad}#${vstup.enchant}`}
-              popis={`Nákup — ${p.nazevPolozky(vstup.zaklad, vstup.enchant)}`}
+              // Jméno města u řádku jen v Příležitostech (`srovnaniMest` se
+              // předává jen tam) — v Dílně a Refiningu ho uživatel vidí
+              // hned nahoře ve svém vlastním nastavení, tady by se to
+              // zdvojilo. V Příležitostech se ale sekce „Ceny" mění podle
+              // toho, co zrovna vyhrálo, takže bez jména u řádku snadno
+              // splyne s poslední otevřenou položkou.
+              popis={p.srovnaniMest
+                ? `Nákup v ${mesto} — ${p.nazevPolozky(vstup.zaklad, vstup.enchant)}`
+                : `Nákup — ${p.nazevPolozky(vstup.zaklad, vstup.enchant)}`}
               mesto={mesto} zaklad={vstup.zaklad} enchant={vstup.enchant}
               typ={typNakup} sklad={sklad} poZmene={p.poZmeneCeny}
             />
           ))}
 
           <RadekCeny
-            popis={`Prodej — ${radek.nazev}${prodejJinde ? ` (${mistoProdeje})` : ""}`}
+            popis={prodejJinde
+              ? `Prodej — ${radek.nazev} (${mistoProdeje})`
+              : p.srovnaniMest
+                ? `Prodej v ${mistoProdeje} — ${radek.nazev}`
+                : `Prodej — ${radek.nazev}`}
             mesto={mistoProdeje} zaklad={radek.polozka.zaklad} enchant={radek.enchant}
             typ={typProdej} sklad={sklad} poZmene={p.poZmeneCeny}
           />
