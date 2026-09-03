@@ -68,10 +68,9 @@ const stylPole =
  * města, zítra může chtít vyřadit Fort Sterling, kam prostě nejezdí.
  * Rychlá volba to zkracuje na jedno kliknutí.
  */
-function VyberMest({ globalni, setGlobalni, rezim }: {
+function VyberMest({ globalni, setGlobalni }: {
   globalni: NastaveniGlobalni;
   setGlobalni: (g: NastaveniGlobalni) => void;
-  rezim: string;
 }) {
   const zakazana = new Set(globalni.zakazanaMesta ?? []);
   const vsechna = MESTA.map((m) => m.nazev);
@@ -137,8 +136,7 @@ function VyberMest({ globalni, setGlobalni, rezim }: {
         {povolenych === 0
           ? "Bez vybraného města nemá aplikace z čeho vybírat — zapni aspoň jedno."
           : zakazana.size > 0
-            ? `Vyřazená města ${rezim === "refining" ? "karta" : "sken"} sama nenavrhne. `
-              + "Ručně nastavené město platí dál."
+            ? "Vyřazená města karta sama nenavrhne. Ručně nastavené město platí dál."
             : "Caerleon leží v černé zóně, Brecilien v Roads of Avalon."}
       </p>
     </>
@@ -174,6 +172,13 @@ export function OvladaciPanel(p: Props) {
   // na běžné tržnici, takže volba sell order vs. buy order platí i tam.
   const maVlastniVyberMest = jeDilna || p.rezim === "refining";
 
+  // Příležitosti srovnávají VŠECHNA města najednou — `spocitatNapricMesty`
+  // hodnotu z týhle kolonky při každém městě přepíše svým vlastním, takže
+  // by šlo o volbu, která nic nedělá. Na rozdíl od Dílny a Refiningu ale
+  // „Co skenovat" a „Zúžit na kategorie" pro Příležitosti platí dál —
+  // proto samostatná podmínka, ne rozšíření `maVlastniVyberMest`.
+  const mestoSeNepouziva = maVlastniVyberMest || p.rezim === "prilezitosti";
+
   // Převoz nic nevyrábí: focus ani poplatek stanice se u něj neuplatní.
   const jePrevoz = p.rezim === "prevoz";
 
@@ -203,8 +208,9 @@ export function OvladaciPanel(p: Props) {
       </select>
 
       {/* V dílně se město i prodej nastavují v její vlastní hlavičce
-          („Vyrábím v / Prodávám na"), tady by to jen dublovalo a mátlo. */}
-      {!maVlastniVyberMest && (
+          („Vyrábím v / Prodávám na"), v Příležitostech se srovnávají
+          všechna najednou — tady by to jen dublovalo a mátlo. */}
+      {!mestoSeNepouziva && (
         <>
           <Popisek>Město (nákup, refining i prodej)</Popisek>
           <select className={stylPole} value={p.nastaveni.mesto}
@@ -334,11 +340,14 @@ export function OvladaciPanel(p: Props) {
         </>
       )}
 
-      {/* Kam jsem ochoten jezdit. Jen tam, kde aplikace město sama vybírá —
-          u skenu jednoho města a u převozu si ho volíš ručně, takže by to
-          byl ovladač bez účinku. */}
-      {(p.rezim === "refining" || p.rezim === "prilezitosti") && (
-        <VyberMest globalni={p.globalni} setGlobalni={p.setGlobalni} rezim={p.rezim} />
+      {/* Kam jsem ochoten jezdit. Jen v Refiningu — u skenu jednoho města
+          a u převozu si město volíš ručně, takže by to byl ovladač bez
+          účinku. Příležitosti mají od teď VLASTNÍ, nezávislý výběr měst
+          přímo v kartě (viz FiltrMistPrilezitosti) — tohle sdílené
+          nastavení by se s ním jen pletlo a navíc už na výpočet
+          Příležitostí vůbec nepůsobí. */}
+      {p.rezim === "refining" && (
+        <VyberMest globalni={p.globalni} setGlobalni={p.setGlobalni} />
       )}
 
       {p.stanice && <div className="mt-3">{p.stanice}</div>}
