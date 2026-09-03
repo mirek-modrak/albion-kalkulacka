@@ -222,3 +222,54 @@ describe("Black Market s převozem", () => {
     expect(m.filter((x) => x.naBlackMarketu).map((x) => x.mesto)).toEqual(["Caerleon"]);
   });
 });
+
+describe("vlastní filtr měst Příležitostí", () => {
+  it("vyloučené město se v seznamu míst neobjeví vůbec", () => {
+    const povolena = MESTA.map((m) => m.nazev).filter((m) => m !== "Brecilien");
+    const m = mistaProSrovnani(SUROVINY_ID, "mesto", povolena);
+    expect(m.some((x) => x.mesto === "Brecilien")).toBe(false);
+    expect(m).toHaveLength(6);
+  });
+
+  it("vypnutý Black Market zmizí i u výbavy, přestože Caerleon zůstal povolený", () => {
+    const m = mistaProSrovnani("zbrane", "mesto", MESTA.map((x) => x.nazev), false);
+    expect(m.some((x) => x.naBlackMarketu)).toBe(false);
+    // Caerleon jako obyčejné město výroby (bez BM prodeje) tam pořád je.
+    expect(m.some((x) => x.mesto === "Caerleon" && !x.naBlackMarketu)).toBe(true);
+  });
+
+  it("vyloučení Caerleonu schová i variantu prodeje na Black Market", () => {
+    const povolena = MESTA.map((m) => m.nazev).filter((m) => m !== "Caerleon");
+    const m = mistaProSrovnani("zbrane", "mesto", povolena, true);
+    expect(m.some((x) => x.naBlackMarketu)).toBe(false);
+  });
+
+  it("bm-s-prevozem bez zahrnutí BM nedá žádné místo — jinak by nešlo prodat", () => {
+    const m = mistaProSrovnani("zbrane", "bm-s-prevozem", MESTA.map((x) => x.nazev), false);
+    expect(m).toHaveLength(0);
+  });
+
+  it("spocitatNapricMesty: vyloučené město se u žádné položky nestane nejlepším", () => {
+    const povolena = MESTA.map((m) => m.nazev).filter((m) => m !== "Thetford");
+    // Ceny stejné všude — bez filtru by díky bonusu vyhrával ingot v Thetfordu.
+    const p = spocitatNapricMesty(
+      NASTAVENI, skladSeStejnymiCenami(), HRA.konstanty, nazev, "marze",
+      undefined, povolena,
+    );
+    const ingot = p.find((x) => x.klic === "T5_METALBAR#0")!;
+    expect(ingot.nejlepsi.mesto).not.toBe("Thetford");
+    expect(ingot.vsechnaMesta.some((v) => v.mesto === "Thetford")).toBe(false);
+    expect(ingot.pocetMist).toBe(MESTA.length - 1);
+  });
+
+  it("spocitatNapricMesty: vypnutý Black Market se u výbavy nenabídne jako nejlepší", () => {
+    const NASTAVENI_ZBRANE: NastaveniSkenu = { ...NASTAVENI, skupina: "zbrane" };
+    const p = spocitatNapricMesty(
+      NASTAVENI_ZBRANE, skladSeStejnymiCenami(), HRA.konstanty, nazev, "marze",
+      undefined, MESTA.map((m) => m.nazev), false,
+    );
+    for (const x of p) {
+      expect(x.vsechnaMesta.some((v) => v.naBlackMarketu)).toBe(false);
+    }
+  });
+});

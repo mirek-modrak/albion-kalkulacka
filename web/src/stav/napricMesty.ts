@@ -42,17 +42,34 @@ export interface VysledekVMeste {
  *
  * Black Market je MÍSTO, ne osmé město — vyrábí se pořád ve městě
  * a s jeho bonusy, mění se jen kam jde výsledek.
+ *
+ * @param povolenaMesta  která města se smí vůbec objevit ve srovnání —
+ *   filtr Příležitostí, NEZÁVISLÝ na „kam jsem ochoten jezdit" z Dílny
+ *   a Refiningu (F13). Výchozí je „všechna", aby volání beze změny chování
+ *   nemusela nic předávat.
+ * @param zahrnoutBM  vypnutelné zvlášť — vyloučení Caerleonu z `povolenaMesta`
+ *   by samo o sobě schovalo jen variantu „vyrob a prodej v Caerleonu", ne
+ *   „vyrob jinde, prodej na BM".
  */
 export function mistaProSrovnani(
   skupina: string,
   mistoProdeje: MistoProdeje,
+  povolenaMesta: string[] = MESTA.map((m) => m.nazev),
+  zahrnoutBM = true,
 ): { mesto: string; naBlackMarketu: boolean }[] {
+  const mestaFiltrovana = MESTA.filter((m) => povolenaMesta.includes(m.nazev));
+
   if (mistoProdeje === "bm-s-prevozem" && bmObchodujeSkupinu(skupina)) {
-    return MESTA.map((m) => ({ mesto: m.nazev, naBlackMarketu: true }));
+    // Bez BM nemá tenhle režim smysl — prodej jde vždycky jen tam.
+    if (!zahrnoutBM) return [];
+    return mestaFiltrovana.map((m) => ({ mesto: m.nazev, naBlackMarketu: true }));
   }
 
-  const mista = MESTA.map((m) => ({ mesto: m.nazev, naBlackMarketu: false }));
-  if (lzeProdatNaBM(BLACK_MARKET_MESTO, skupina)) {
+  const mista = mestaFiltrovana.map((m) => ({ mesto: m.nazev, naBlackMarketu: false }));
+  // Výroba pro BM sedí vždy v Caerleonu — vyloučit ho z `povolenaMesta`
+  // musí schovat i tuhle variantu, jinak by filtr měst na BM nedosáhl.
+  if (zahrnoutBM && povolenaMesta.includes(BLACK_MARKET_MESTO)
+    && lzeProdatNaBM(BLACK_MARKET_MESTO, skupina)) {
     mista.push({ mesto: BLACK_MARKET_MESTO, naBlackMarketu: true });
   }
   return mista;
@@ -87,10 +104,15 @@ export function spocitatNapricMesty(
   nazevPolozky: (zaklad: string, enchant: number) => string,
   metrika: Metrika,
   historie?: SkladHistorie,
+  /** Vlastní filtr měst Příležitostí — viz `mistaProSrovnani`. */
+  povolenaMesta?: string[],
+  zahrnoutBM = true,
 ): Prilezitost[] {
   const podlePolozky = new Map<string, VysledekVMeste[]>();
 
-  for (const misto of mistaProSrovnani(nastaveni.skupina, nastaveni.mistoProdeje)) {
+  for (const misto of mistaProSrovnani(
+    nastaveni.skupina, nastaveni.mistoProdeje, povolenaMesta, zahrnoutBM,
+  )) {
     // Bonusy se liší podle města I podle položky — Thetford dává +0,40
     // na rudu, ale nic na dřevo. Proto se předává lokace toho města.
     // U Black Marketu je to pořád lokace Caerleonu: vyrábí se ve městě.

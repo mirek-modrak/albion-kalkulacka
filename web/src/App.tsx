@@ -19,8 +19,9 @@ import type { UlozenaCena } from "./stav/uloziste";
 import { OvladaciPanel } from "./ui/OvladaciPanel";
 import { TabulkaSkenu } from "./ui/TabulkaSkenu";
 import { DetailPolozky } from "./ui/DetailPolozky";
-import { TabulkaPrilezitosti } from "./ui/TabulkaPrilezitosti";
+import { TabPrilezitosti } from "./ui/TabPrilezitosti";
 import { spocitatNapricMesty, souhrnPrilezitosti } from "./stav/napricMesty";
+import { nactiFiltrMist, ulozFiltrMist, type FiltrMist } from "./stav/filtrMistPrilezitosti";
 import {
   katalogDilny, kombinaceZKlicu, nactiDilnu, ulozDilnu, vyhodnotitDilnu,
   type StavDilny,
@@ -129,6 +130,14 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
   const [maxStari, setMaxStari] = useState<number>(predvolby.maxStari);
   const [jenZiskove, setJenZiskove] = useState(predvolby.jenZiskove);
   const [stav, setStav] = useState<StavSkenu>({ druh: "necinny" });
+
+  // Vlastní výběr měst pro Příležitosti — NEZÁVISLÝ na „kam jsem ochoten
+  // jezdit" z Dílny a Refiningu. Vlastnost prohlížeče, ne herního účtu,
+  // proto vlastní klíč v localStorage, ne v synchronizovaném nastavení.
+  const [mistaFiltrPrilezitosti, setMistaFiltrPrilezitosti] = useState<FiltrMist>(nactiFiltrMist);
+  useEffect(() => {
+    ulozFiltrMist(mistaFiltrPrilezitosti);
+  }, [mistaFiltrPrilezitosti]);
 
   // Detail se drží jako KLÍČ, ne jako objekt řádku. Kdyby se držel objekt,
   // ukazoval by po úpravě ceny stará čísla — řádky se při přepočtu vytvářejí znovu.
@@ -386,16 +395,25 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
       nastaveniPrevozu.nosnostKg, maxStari],
   );
 
+  // Která města smí Příležitosti vůbec zvažovat jako kandidáta na
+  // „nejlepší místo" — vlastní filtr karty, viz `mistaFiltrPrilezitosti`.
+  const povolenaMestaPrilezitosti = useMemo(
+    () => MESTA.map((m) => m.nazev)
+      .filter((m) => !mistaFiltrPrilezitosti.vylouceneMesta.includes(m)),
+    [mistaFiltrPrilezitosti.vylouceneMesta],
+  );
+
   // Příležitosti napříč městy. Počítá se jen v odpovídajícím režimu —
   // je to 7× víc práce než sken jednoho města.
   const prilezitosti = useMemo(
     () => rezim === "prilezitosti"
       ? spocitatNapricMesty(
           nastaveniKarty, skladRef.current, HRA.konstanty, nazevPolozky, metrika,
-          historieRef.current,
+          historieRef.current, povolenaMestaPrilezitosti, mistaFiltrPrilezitosti.zahrnoutBM,
         )
       : [],
-    [rezim, nastaveniKarty, verzeCen, metrika],
+    [rezim, nastaveniKarty, verzeCen, metrika, povolenaMestaPrilezitosti,
+      mistaFiltrPrilezitosti.zahrnoutBM],
   );
 
   const filtrovanePrilezitosti = useMemo(() => {
@@ -669,11 +687,13 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
                 </div>
               </div>
             )}
-            <TabulkaPrilezitosti
+            <TabPrilezitosti
               prilezitosti={filtrovanePrilezitosti.radky}
               celkemPredOrezem={filtrovanePrilezitosti.celkem}
               metrika={metrika}
               davka={nastaveniKarty.pocetVyrobku}
+              mistaFiltr={mistaFiltrPrilezitosti}
+              setMistaFiltr={setMistaFiltrPrilezitosti}
               otevritDetail={(p) => setDetailKlic(p.klic)}
             />
           </div>
