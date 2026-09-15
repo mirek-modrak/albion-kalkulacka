@@ -666,3 +666,39 @@ describe("spocitatSken s kombinaceOverride — jen vybrané položky", () => {
     expect(radky.map((r) => r.polozka.zaklad)).toEqual(komb.map((k) => k.polozka.zaklad));
   });
 });
+
+describe("potrebnaIds — suroviny pro povýšení runou", () => {
+  const zbrane = potrebnaIds("zbrane");
+
+  it("stahuje runy, duše i relikvie", () => {
+    // Bez nich by se cesta „vyrob základ a doenchantuj" nikdy nespočítala
+    // a rozpad by ji mlčky vynechal.
+    expect(zbrane).toContain("T5_RUNE");
+    expect(zbrane).toContain("T5_SOUL");
+    expect(zbrane).toContain("T5_RELIC");
+  });
+
+  it("stahuje i kus o stupeň níž", () => {
+    // .1 se dá vyrobit povýšením .0 — bez jeho ceny není co porovnávat.
+    expect(zbrane).toContain("T5_MAIN_SWORD");
+    expect(zbrane).toContain("T5_MAIN_SWORD@2");
+  });
+
+  it("zúžení na jednu kategorii runy nezahodí", () => {
+    const meceOnly = potrebnaIds("zbrane", ["sword"]);
+    expect(meceOnly).toContain("T5_RUNE");
+  });
+
+  it("suroviny runy nepotřebují — nejde je povýšit", () => {
+    const ids = potrebnaIds(SUROVINY_ID);
+    expect(ids.some((i) => i.endsWith("_RUNE"))).toBe(false);
+    expect(ids.some((i) => i.endsWith("_SOUL"))).toBe(false);
+  });
+
+  it("přírůstek je zanedbatelný — run je v celé hře 15", () => {
+    // Pojistka proti tomu, aby se sken nafoukl o stovky ID a začal
+    // narážet na limity AODP.
+    const runy = zbrane.filter((i) => /_(RUNE|SOUL|RELIC)$/.test(i));
+    expect(runy.length).toBeLessThanOrEqual(15);
+  });
+});

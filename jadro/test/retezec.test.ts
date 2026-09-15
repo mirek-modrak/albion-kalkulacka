@@ -268,3 +268,166 @@ describe("enchanty", () => {
     expect(t3.uzel.enchant).toBe(0);
   });
 });
+
+/**
+ * Třetí cesta: povýšit hotový kus runou / duší / relikvií.
+ *
+ * T4 sekera potřebuje 288 run na .1, 288 duší na .2 a 288 relikvií na .3.
+ * Kontrolní čísla se počítají ručně, ne z kódu — jinak by test jen opsal
+ * to, co kód dělá, včetně případné chyby.
+ */
+describe("enchantovat runou", () => {
+  /** Ceny, u kterých je enchantování jasně nejlevnější. */
+  const levneRuny = {
+    "T4_MAIN_AXE#1": 100_000,   // na trhu draho
+    "T4_MAIN_AXE#0": 10_000,
+    "T4_RUNE#0": 10,
+  };
+
+  it("levné runy → vyplatí se enchantovat", () => {
+    const u = spocitatRetezec("T4_MAIN_AXE", 1 as Enchant, kontext(levneRuny));
+
+    // 10 000 za základní kus + 288 × 10 za runy
+    expect(u.zpusob).toBe("enchantovat");
+    expect(u.nakladEnchantem).toBeCloseTo(12_880, 6);
+    expect(u.naklad).toBeCloseTo(12_880, 6);
+    // Výroba z .1 surovin nejde — jejich ceny nejsou.
+    expect(u.nakladVyrobou).toBeNull();
+    expect(u.uspora).toBeCloseTo(0.8712, 4);
+  });
+
+  it("řetěz enchantů se poskládá: .0 → .1 → .2", () => {
+    const u = spocitatRetezec("T4_MAIN_AXE", 2 as Enchant, kontext({
+      "T4_MAIN_AXE#2": 1_000_000,
+      "T4_MAIN_AXE#0": 10_000,
+      "T4_RUNE#0": 10,
+      "T4_SOUL#0": 20,
+      // Cena .1 na trhu ZÁMĚRNĚ chybí — mezistupeň musí vzniknout výpočtem.
+    }));
+
+    // .1 = 10 000 + 2 880 = 12 880;  .2 = 12 880 + 288 × 20 = 18 640
+    expect(u.zpusob).toBe("enchantovat");
+    expect(u.naklad).toBeCloseTo(18_640, 6);
+
+    const nizsi = u.vstupy[0]!.uzel;
+    expect(nizsi.enchant).toBe(1);
+    expect(nizsi.zpusob).toBe("enchantovat");
+    expect(nizsi.naklad).toBeCloseTo(12_880, 6);
+  });
+
+  it("return rate se na runy NEUPLATNÍ", () => {
+    // Nesmyslně vysoký bonus: kdyby na runy nebo na základní kus spadl
+    // return rate, náklad by klesl pod kontrolní číslo.
+    const u = spocitatRetezec("T4_MAIN_AXE", 1 as Enchant, kontext(levneRuny, 900));
+    expect(u.nakladEnchantem).toBeCloseTo(12_880, 6);
+  });
+
+  it("enchant nestojí focus ani se nepočítá jako krok výroby", () => {
+    const s = shrnRetezec(spocitatRetezec("T4_MAIN_AXE", 1 as Enchant, kontext(levneRuny)));
+    expect(s.krokuEnchantu).toBe(1);
+    expect(s.krokuVyroby).toBe(0);
+    expect(s.focusCelkem).toBe(0);
+  });
+
+  it("drahé runy → radši koupit hotové", () => {
+    const u = spocitatRetezec("T4_MAIN_AXE", 1 as Enchant, kontext({
+      ...levneRuny,
+      "T4_RUNE#0": 10_000,     // 288 × 10 000 = 2,88 M
+    }));
+    expect(u.zpusob).toBe("koupit");
+    expect(u.nakladEnchantem).toBeCloseTo(2_890_000, 6);
+    expect(u.vstupy).toHaveLength(0);
+  });
+
+  // ── Negativní prostor ────────────────────────────────────────
+
+  it("chybějící cena runy cestu zruší, ale ostatní NEZABIJE", () => {
+    const u = spocitatRetezec("T4_MAIN_AXE", 1 as Enchant, kontext({
+      "T4_MAIN_AXE#1": 100_000,
+      "T4_MAIN_AXE#0": 10_000,
+      "T4_PLANKS#1": 100,
+      "T4_METALBAR#1": 100,
+      // cena runy chybí
+    }));
+
+    // Nesmí vzniknout náklad z neúplného součtu.
+    expect(u.nakladEnchantem).toBeNull();
+    // A výroba i nákup musí dál fungovat: 24 surovin × 100 × (1 − RRR).
+    expect(u.zpusob).toBe("vyrobit");
+    expect(u.nakladVyrobou).not.toBeNull();
+  });
+
+  it("chybějící cena kusu o stupeň níž cestu taky zruší", () => {
+    const u = spocitatRetezec("T4_MAIN_AXE", 1 as Enchant, kontext({
+      "T4_MAIN_AXE#1": 100_000,
+      "T4_RUNE#0": 10,
+      // cena .0 chybí a vyrobit se nedá — chybí i suroviny
+    }));
+    expect(u.nakladEnchantem).toBeNull();
+    expect(u.zpusob).toBe("koupit");
+  });
+
+  it("na .4 cesta runou neexistuje", () => {
+    // Herní data mají vylepšení jen na stupně 1–3. Kdyby se kód spolehl
+    // na „enchant − 1", nabídl by tu neexistující postup.
+    const u = spocitatRetezec("T4_MAIN_AXE", 4 as Enchant, kontext({
+      "T4_MAIN_AXE#4": 100_000,
+      "T4_MAIN_AXE#3": 10,
+      "T4_RELIC#0": 1,
+    }));
+    expect(u.nakladEnchantem).toBeNull();
+    expect(u.zpusob).toBe("koupit");
+  });
+
+  it("suroviny cestu runou nemají vůbec", () => {
+    const u = spocitatRetezec("T4_PLANKS", 1 as Enchant, kontext({
+      "T4_PLANKS#1": 500,
+      "T4_RUNE#0": 1,
+    }));
+    expect(u.nakladEnchantem).toBeNull();
+  });
+
+  it("při SHODĚ nákladů vyhraje nákup", () => {
+    // Za stejné peníze je nákup nejmíň práce. Zároveň hlídá, že se
+    // nezměnilo pořadí z doby před třetí cestou.
+    const u = spocitatRetezec("T4_MAIN_AXE", 1 as Enchant, kontext({
+      ...levneRuny,
+      "T4_MAIN_AXE#1": 12_880,   // přesně tolik, kolik stojí enchantování
+    }));
+    expect(u.zpusob).toBe("koupit");
+    expect(u.uspora).toBe(0);
+  });
+});
+
+/**
+ * Recept bez vstupů není výroba.
+ *
+ * Regrese k vadě nalezené při zavádění cesty enchantem: 140 položek má
+ * v datech „recept" s prázdným seznamem surovin (tokeny, essence potions,
+ * blueprinty cap). Součet vstupů 0 + poplatek 0 = náklad 0, takže je řetěz
+ * hlásil jako „vyrobit zadarmo" — a přes Siphoned Energy to dělalo zdarma
+ * i všechny runy.
+ */
+describe("recept bez vstupů není výroba", () => {
+  it("Siphoned Energy nejde vyrobit z ničeho", () => {
+    const u = spocitatRetezec("UNIQUE_GVGTOKEN_GENERIC", 0, kontext({}));
+    expect(u.nakladVyrobou).toBeNull();
+    expect(u.zpusob).toBe("nedostupne");
+  });
+
+  it("runa bez ceny je nedostupná, ne zadarmo", () => {
+    // Přes token by dřív vyšla na 0 — a enchantování pak vždycky zdarma.
+    const u = spocitatRetezec("T4_RUNE", 0, kontext({}));
+    expect(u.naklad).toBeNull();
+  });
+
+  it("skutečný recept se ale nezakázal", () => {
+    // Runa = 1 token na 75 kusů. Když je token oceněný, výroba platí.
+    const u = spocitatRetezec("T4_RUNE", 0, kontext({
+      "T4_RUNE#0": 10_000,
+      "UNIQUE_GVGTOKEN_GENERIC#0": 7500,
+    }));
+    expect(u.zpusob).toBe("vyrobit");
+    expect(u.nakladVyrobou!).toBeGreaterThan(0);
+  });
+});

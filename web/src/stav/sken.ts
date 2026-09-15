@@ -234,6 +234,31 @@ export function potrebnaIdsZ(kombinace: Kombinace[]): string[] {
       // které se v datech chovají stejně.
       ids.add(aodpId({ zaklad: vstup.zaklad, enchant: vstup.enchant }, "surovina"));
     }
+
+    // Cesta „vezmi kus o stupeň níž a povyš ho runou" potřebuje ceny, které
+    // z receptu nevyplývají: kus s nižším enchantem a runy/duše/relikvie.
+    // Bez nich by rozpad tuhle možnost mlčky vynechal — a doporučil výrobu,
+    // aniž by ji vůbec spočítal.
+    //
+    // Roste to jen o hrstku ID: různých run je v celé hře 15 a nižší stupně
+    // téže položky sken u kategorií stahuje tak jako tak.
+    for (let e = enchant; e >= 1; e--) {
+      const cesta = polozka.vylepseni.find((v) => v.naEnchant === e);
+      if (!cesta) continue;
+
+      const nizsi = (e - 1) as Enchant;
+      ids.add(aodpId({ zaklad: polozka.zaklad, enchant: nizsi }, polozka.druh));
+      for (const vstup of cesta.vstupy) {
+        ids.add(aodpId({ zaklad: vstup.zaklad, enchant: vstup.enchant }, "surovina"));
+      }
+
+      // Aby šlo porovnat i „vyrob základ a doenchantuj", ne jen „kup základ".
+      const nizsiVarianta = polozka.varianty
+        .find((v) => v.enchant === nizsi && !v.sFactionTokenem);
+      for (const vstup of nizsiVarianta?.vstupy ?? []) {
+        ids.add(aodpId({ zaklad: vstup.zaklad, enchant: vstup.enchant }, "surovina"));
+      }
+    }
   }
   return [...ids];
 }

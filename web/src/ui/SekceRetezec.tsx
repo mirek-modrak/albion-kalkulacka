@@ -51,11 +51,34 @@ export function SekceRetezec(p: Props) {
 
   const souhrn = useMemo(() => shrnRetezec(koren), [koren]);
 
+  /** Existuje pro tenhle stupeň vůbec povýšení runou? U .0 a .4 ne. */
+  const cestaEnchantu = p.polozka.vylepseni.find((v) => v.naEnchant === p.enchant);
+
+  /**
+   * Co brání spočítat enchantování.
+   *
+   * Cesta, která existuje, ale nemá cenu, se NESMÍ jen tiše vynechat —
+   * uživatel by dostal doporučení „vyrobit", aniž by tušil, že třetí
+   * možnost se vůbec nepočítala. Chybět může buď runa, nebo kus o stupeň
+   * níž; když mají runy ceny, je na vině ten kus.
+   */
+  const chybiProEnchant = useMemo(() => {
+    if (!cestaEnchantu || koren.nakladEnchantem !== null) return null;
+    const typ = typProNakup(p.nastaveni.rezimNakupu);
+    const bezCeny = cestaEnchantu.vstupy
+      .filter((v) => p.sklad.ziskej(p.mesto, v.zaklad, v.enchant, typ) === undefined)
+      .map((v) => p.nazevPolozky(v.zaklad, v.enchant));
+    return bezCeny.length > 0
+      ? bezCeny.join(", ")
+      : p.nazevPolozky(p.polozka.zaklad, p.enchant - 1);
+  }, [cestaEnchantu, koren, p.sklad, p.mesto, p.nastaveni.rezimNakupu, p.verzeCen]);
+
   if (koren.zpusob === "nedostupne") {
     return <p className="py-2 text-sm text-slate-500">Chybí ceny, nelze porovnat.</p>;
   }
 
-  const jenJednaCesta = koren.cenaNaTrhu === null || koren.nakladVyrobou === null;
+  const dostupnychCest = [koren.cenaNaTrhu, koren.nakladVyrobou, koren.nakladEnchantem]
+    .filter((x) => x !== null).length;
 
   return (
     <>
@@ -63,42 +86,74 @@ export function SekceRetezec(p: Props) {
         <span className="text-sm">
           {koren.zpusob === "vyrobit" ? (
             <b className="text-emerald-600 dark:text-emerald-400">Vyplatí se vyrobit</b>
+          ) : koren.zpusob === "enchantovat" ? (
+            <b className="text-violet-600 dark:text-violet-400">Vyplatí se enchantovat</b>
           ) : (
             <b>Vyplatí se koupit</b>
           )}
-          {jenJednaCesta && (
+          {dostupnychCest === 1 && (
             <span className="ml-1 text-xs text-slate-500">
-              (druhá možnost není — chybí cena)
+              (není s čím porovnat — ostatní cesty nemají cenu)
             </span>
           )}
         </span>
-        {koren.usporaVyrobou !== null && (
-          <span className={`text-sm font-semibold ${koren.usporaVyrobou > 0
-            ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500"}`}>
-            {koren.usporaVyrobou > 0
-              ? `ušetříš ${procenta(koren.usporaVyrobou, 0)}`
-              : `výroba je o ${procenta(-koren.usporaVyrobou, 0)} dražší`}
+        {koren.uspora !== null && koren.uspora > 0 ? (
+          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+            ušetříš {procenta(koren.uspora, 0)}
           </span>
-        )}
+        ) : koren.usporaVyrobou !== null && koren.usporaVyrobou <= 0 ? (
+          <span className="text-sm font-semibold text-slate-500">
+            výroba je o {procenta(-koren.usporaVyrobou, 0)} dražší
+          </span>
+        ) : null}
       </div>
 
-      <div className="mb-2 grid grid-cols-2 gap-x-4 text-sm">
+      {/* Třetí sloupec jen tam, kde povýšení runou vůbec existuje — u .0
+          kusů a u surovin by to byl trvale prázdný sloupec. */}
+      <div className={`mb-2 grid gap-x-4 text-sm ${cestaEnchantu
+        ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
         <Udaj popis="Koupit za" hodnota={koren.cenaNaTrhu !== null
           ? cislo(koren.cenaNaTrhu) : "—"} />
         <Udaj popis="Vyrobit za" hodnota={koren.nakladVyrobou !== null
           ? cislo(koren.nakladVyrobou, 1) : "—"} />
+        {cestaEnchantu && (
+          <Udaj popis="Enchantovat za" hodnota={koren.nakladEnchantem !== null
+            ? cislo(koren.nakladEnchantem, 1) : "—"} />
+        )}
       </div>
 
-      <Vetev uzel={koren} nazevPolozky={p.nazevPolozky} uroven={0} />
+      {chybiProEnchant && (
+        <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
+          Enchantování nejde spočítat — chybí cena: <b>{chybiProEnchant}</b>.
+          Zkus obnovit ceny, nebo ji dopiš ručně výš.
+        </p>
+      )}
 
-      {souhrn.krokuVyroby > 0 && (
+      <Vetev uzel={koren} nazevPolozky={p.nazevPolozky} uroven={0} pocet={null} />
+
+      {(souhrn.krokuVyroby > 0 || souhrn.krokuEnchantu > 0) && (
         <p className="mt-2 text-xs text-slate-500">
           {/* Úspora v silveru není celá pravda — hluboká výroba stojí čas
               a focus na každém patře. Bez těch čísel by kalkulačka
               doporučovala výrobu, aniž by řekla, co to obnáší. */}
-          <b>{souhrn.krokuVyroby}</b>{" "}
-          {souhrn.krokuVyroby === 1 ? "krok výroby" : souhrn.krokuVyroby < 5 ? "kroky výroby" : "kroků výroby"}
-          {" "}· focus {cislo(souhrn.focusCelkem, 1)} na kus
+          {souhrn.krokuVyroby > 0 && (
+            <>
+              <b>{souhrn.krokuVyroby}</b>{" "}
+              {souhrn.krokuVyroby === 1 ? "krok výroby"
+                : souhrn.krokuVyroby < 5 ? "kroky výroby" : "kroků výroby"}
+              {" "}· focus {cislo(souhrn.focusCelkem, 1)} na kus
+            </>
+          )}
+          {souhrn.krokuEnchantu > 0 && (
+            <>
+              {souhrn.krokuVyroby > 0 && " · "}
+              {/* Enchant se počítá zvlášť: taky ho musíš odklikat, ale focus
+                  nestojí — slít to do „kroků výroby" by lhalo o obojím. */}
+              <b>{souhrn.krokuEnchantu}</b>{" "}
+              {souhrn.krokuEnchantu === 1 ? "krok enchantu" : "kroky enchantu"}
+              {" "}(bez focusu)
+            </>
+          )}
           {souhrn.nejhlubsiUroven > 1 && ` · řetěz je ${souhrn.nejhlubsiUroven + 1} pater hluboko`}
           {" "}— úspora stojí čas a focus, ne jen silver.
         </p>
@@ -108,8 +163,12 @@ export function SekceRetezec(p: Props) {
 }
 
 /** Jedno patro řetězu. Rekurzivní, stejně jako výpočet. */
-function Vetev({ uzel, nazevPolozky, uroven }: {
-  uzel: UzelRetezce; nazevPolozky: (z: string, e: number) => string; uroven: number;
+function Vetev({ uzel, nazevPolozky, uroven, pocet }: {
+  uzel: UzelRetezce;
+  nazevPolozky: (z: string, e: number) => string;
+  uroven: number;
+  /** Kolik kusů recept žádá na jeden kus výstupu. Null u vrcholu řetězu. */
+  pocet: number | null;
 }) {
   const nazev = nazevPolozky(uzel.zaklad, uzel.enchant);
 
@@ -120,10 +179,21 @@ function Vetev({ uzel, nazevPolozky, uroven }: {
         <span>
           {uroven > 0 && <span className="text-slate-400">└ </span>}
           {nazev}
+          {/* Počet je u enchantu zásadní údaj — 288 run na jeden kus je něco
+              úplně jiného než 8 planěk, a z ceny to nepoznáš. */}
+          {pocet !== null && pocet !== 1 && (
+            <span className="ml-1 text-xs text-slate-400">
+              {/* Celá čísla bez desetin: „× 8" se čte líp než „× 8,00".
+                  Zlomky vzniknou u receptů, kde jedna dávka dá víc kusů. */}
+              × {cislo(pocet, Number.isInteger(pocet) ? 0 : 2)}
+            </span>
+          )}
         </span>
         <span className="flex items-baseline gap-2 whitespace-nowrap">
           {uzel.zpusob === "vyrobit" ? (
             <span className="text-xs text-emerald-600 dark:text-emerald-400">vyrobit</span>
+          ) : uzel.zpusob === "enchantovat" ? (
+            <span className="text-xs text-violet-600 dark:text-violet-400">enchantovat</span>
           ) : uzel.zpusob === "koupit" ? (
             <span className="text-xs text-slate-500">koupit</span>
           ) : (
@@ -137,7 +207,8 @@ function Vetev({ uzel, nazevPolozky, uroven }: {
 
       {uzel.vstupy.map((v) => (
         <Vetev key={`${v.uzel.zaklad}#${v.uzel.enchant}`}
-               uzel={v.uzel} nazevPolozky={nazevPolozky} uroven={uroven + 1} />
+               uzel={v.uzel} nazevPolozky={nazevPolozky} uroven={uroven + 1}
+               pocet={v.pocetNaKus} />
       ))}
     </div>
   );

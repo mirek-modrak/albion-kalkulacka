@@ -244,9 +244,14 @@ export function DetailPolozky(p: Props) {
             Order book říká za kolik někdo NABÍZÍ, tohle co se PRODALO. */}
         <SekceObchodu radek={radek} davka={nastaveni.pocetVyrobku} />
 
-        {/* Koupit vs. vyrobit — jen u položek, které jdou vyrobit. */}
+        {/* Koupit vs. vyrobit — jen u položek, které jdou vyrobit.
+            Enchantování se do nadpisu doplní jen tam, kde ta cesta existuje:
+            u .0 kusů a u surovin runou povýšit nejde a slibovat to v nadpisu
+            by znamenalo nabídnout postup, který uvnitř chybí. */}
         {radek.polozka.varianty.length > 0 && (
-          <Sekce nadpis="Koupit, nebo vyrobit?">
+          <Sekce nadpis={radek.polozka.vylepseni.some((v) => v.naEnchant === radek.enchant)
+            ? "Koupit, vyrobit, nebo enchantovat?"
+            : "Koupit, nebo vyrobit?"}>
             <SekceRetezec
               polozka={radek.polozka} enchant={radek.enchant}
               mesto={mesto} lokace={p.lokace} sklad={sklad}
