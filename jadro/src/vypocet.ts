@@ -142,6 +142,67 @@ function klic(zaklad: string, enchant: number): string {
   return `${zaklad}#${enchant}`;
 }
 
+/** Co zbyde z prodeje dávky po dani a poplatcích. */
+export interface Trzba {
+  trzbaHruba: number;
+  dan: number;
+  sazbaDane: number;
+  setupFeeProdej: number;
+  trzbaCista: number;
+  /** Čistá tržba, kdyby cestou nic nezmizelo. */
+  trzbaCistaBezRizika: number;
+}
+
+/**
+ * Tržba z prodeje dávky — nezávislá na tom, jak kus vznikl.
+ *
+ * Vytažené ze `spocitat`, protože Dílna porovnává tři cesty (koupit,
+ * vyrobit, enchantovat) se stejným prodejem. Tržba se musí dát spočítat
+ * i tehdy, když chybí ceny surovin — jinak by položku, kterou jde jen
+ * koupit, nebylo s čím porovnat.
+ */
+export function spocitatTrzbu(
+  z: Pick<ZadaniVypoctu,
+    "pocetVyrobku" | "cenaVystupu" | "premium" | "rezimProdeje"
+    | "prodejNaBlackMarketu" | "ztrataZasilek">,
+  konstanty: Konstanty,
+): Trzba {
+  // Ztracená zásilka se neprodá, ale vyrobit se musela — proto se ztráta
+  // odečítá z TRŽBY, ne z nákladů. Stejný model jako `spocitatPrevoz`.
+  const ztrata = Math.min(Math.max(z.ztrataZasilek ?? 0, 0), 1);
+  const dorazi = z.pocetVyrobku * (1 - ztrata);
+
+  const trzbaHruba = z.cenaVystupu.hodnota * dorazi;
+
+  const sazbaDane = z.premium ? konstanty.danPremium : konstanty.danNormalni;
+  // Daň nikdy neklesne pod minimum za kus — u levných položek to není zanedbatelné.
+  // Počítá se z toho, co DORAZÍ: co se ztratí, to se neprodá a nezdaní.
+  const dan = dorazi > 0
+    ? Math.max(trzbaHruba * sazbaDane, konstanty.minimalniDan * dorazi)
+    : 0;
+
+  const sazbaSetupProdej = z.prodejNaBlackMarketu
+    ? konstanty.blackMarketSetupFee
+    : konstanty.setupFee;
+  const setupFeeProdej = z.rezimProdeje === "order" ? trzbaHruba * sazbaSetupProdej : 0;
+
+  const trzbaCista = trzbaHruba - dan - setupFeeProdej;
+
+  // Srovnávací hodnota bez rizika — ať je vidět, co je zásluha města
+  // a co jen zvolený odhad ztrát.
+  const trzbaBezRizika = z.cenaVystupu.hodnota * z.pocetVyrobku;
+  const danBezRizika = Math.max(
+    trzbaBezRizika * sazbaDane, konstanty.minimalniDan * z.pocetVyrobku,
+  );
+  const setupBezRizika = z.rezimProdeje === "order"
+    ? trzbaBezRizika * sazbaSetupProdej : 0;
+
+  return {
+    trzbaHruba, dan, sazbaDane, setupFeeProdej, trzbaCista,
+    trzbaCistaBezRizika: trzbaBezRizika - danBezRizika - setupBezRizika,
+  };
+}
+
 export function spocitat(
   z: ZadaniVypoctu,
   konstanty: Konstanty,
@@ -211,35 +272,9 @@ export function spocitat(
   const nakladyCelkem = nakladSuroviny + setupFeeNakup + poplatekStaniceCelkem + silverCelkem;
 
   // ── Výnos ─────────────────────────────────────────────────
-  // Ztracená zásilka se neprodá, ale vyrobit se musela — proto se ztráta
-  // odečítá z TRŽBY, ne z nákladů. Stejný model jako `spocitatPrevoz`.
-  const ztrata = Math.min(Math.max(z.ztrataZasilek ?? 0, 0), 1);
-  const dorazi = z.pocetVyrobku * (1 - ztrata);
-
-  const trzbaHruba = z.cenaVystupu.hodnota * dorazi;
-
-  const sazbaDane = z.premium ? konstanty.danPremium : konstanty.danNormalni;
-  // Daň nikdy neklesne pod minimum za kus — u levných položek to není zanedbatelné.
-  // Počítá se z toho, co DORAZÍ: co se ztratí, to se neprodá a nezdaní.
-  const dan = dorazi > 0
-    ? Math.max(trzbaHruba * sazbaDane, konstanty.minimalniDan * dorazi)
-    : 0;
-
-  const sazbaSetupProdej = z.prodejNaBlackMarketu
-    ? konstanty.blackMarketSetupFee
-    : konstanty.setupFee;
-  const setupFeeProdej = z.rezimProdeje === "order" ? trzbaHruba * sazbaSetupProdej : 0;
-
-  const trzbaCista = trzbaHruba - dan - setupFeeProdej;
-
-  // Srovnávací hodnota bez rizika — ať je vidět, co je zásluha města
-  // a co jen zvolený odhad ztrát.
-  const trzbaBezRizika = z.cenaVystupu.hodnota * z.pocetVyrobku;
-  const danBezRizika = Math.max(
-    trzbaBezRizika * sazbaDane, konstanty.minimalniDan * z.pocetVyrobku,
-  );
-  const setupBezRizika = z.rezimProdeje === "order"
-    ? trzbaBezRizika * sazbaSetupProdej : 0;
+  const {
+    trzbaHruba, dan, sazbaDane, setupFeeProdej, trzbaCista, trzbaCistaBezRizika,
+  } = spocitatTrzbu(z, konstanty);
 
   // ── Výsledek ──────────────────────────────────────────────
   const zisk = trzbaCista - nakladyCelkem;
@@ -253,7 +288,7 @@ export function spocitat(
       nakladSuroviny, setupFeeNakup, poplatekStaniceKus, poplatekStaniceCelkem, silverCelkem, nakladyCelkem,
       trzbaHruba, dan, sazbaDane, setupFeeProdej, trzbaCista,
       zisk,
-      ziskBezRizika: trzbaBezRizika - danBezRizika - setupBezRizika - nakladyCelkem,
+      ziskBezRizika: trzbaCistaBezRizika - nakladyCelkem,
       marze: nakladyCelkem > 0 ? zisk / nakladyCelkem : 0,
       // Na KUS, který jsi vyrobil — ne na ten, co dorazil. Suroviny, focus
       // i poplatek jsi utratil za všechny, včetně ztracených.

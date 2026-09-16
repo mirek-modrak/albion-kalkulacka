@@ -17,7 +17,7 @@ import type { Razeni } from "./filtrDilny";
 
 export type SloupecId =
   | "kdeKam" | "prodej" | "zisk" | "marze" | "ziskNaKus" | "ziskNaKg" | "ziskNaFocus"
-  | "naklad" | "trzba" | "likvidita" | "stari" | "tier";
+  | "koupit" | "vyrobit" | "enchantovat" | "trzba" | "likvidita" | "stari" | "tier";
 
 /**
  * @template Id  množina id sloupců té které karty. Výchozí je Dílna;
@@ -56,7 +56,20 @@ export const SLOUPCE: DefiniceSloupce[] = [
     id: "ziskNaFocus", nazev: "Zisk / focus", vpravo: true, razeni: "ziskNaFocus",
     popis: "když je focus vzácnější než silver",
   },
-  { id: "naklad", nazev: "Náklad / ks", vpravo: true, razeni: "naklad" },
+  // Tři cesty místo jednoho „Náklad / ks" (F12). Nejlevnější je zvýrazněná
+  // a z ní se počítá zisk i marže.
+  {
+    id: "koupit", nazev: "Koupit / ks", vpravo: true, razeni: "nakladKoupit",
+    popis: "cena hotového kusu ve městě výroby",
+  },
+  {
+    id: "vyrobit", nazev: "Vyrobit / ks", vpravo: true, razeni: "nakladVyrobit",
+    popis: "výroba ze surovin",
+  },
+  {
+    id: "enchantovat", nazev: "Enchant / ks", vpravo: true, razeni: "nakladEnchant",
+    popis: "vyrobit .0 a povýšit runami, dušemi, relikviemi",
+  },
   {
     id: "trzba", nazev: "Tržba / ks", vpravo: true, razeni: "trzba",
     popis: "prodejní cena po odečtení ztráty zásilek",

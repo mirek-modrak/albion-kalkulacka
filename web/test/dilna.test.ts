@@ -20,7 +20,7 @@ vi.stubGlobal("localStorage", falesne);
 
 const {
   katalogDilny, klicDilny, kombinaceZKlicu, konfigProKlic, mistoProdejeZKonfigu,
-  vyhodnotitDilnu, nactiDilnu, surovinyDilny, AUTO_MESTO, VYCHOZI_KONFIG,
+  vyhodnotitDilnu, nactiDilnu, surovinyDilny, runyDilny, ziskDilny, AUTO_MESTO, VYCHOZI_KONFIG,
 } = await import("../src/stav/dilna");
 const { SkladCen } = await import("../src/stav/skladCen");
 const { SkladHistorie } = await import("../src/stav/skladHistorie");
@@ -212,5 +212,151 @@ describe("zdroj ceny — 30denní medián", () => {
     sklad.ulozRucne("Black Market", "T5_MAIN_SWORD", 0, "buy_max", 12345);
     const v = vyhodnotitDilnu(stav("historie"), sklad, historie(), HRA.konstanty, nast, nazev);
     expect(v[0]!.radek!.vysledek!.trzbaHruba).toBe(12345 * 100);   // ruční vyhrála
+  });
+});
+
+/**
+ * F12 — tři cesty v Dílně.
+ *
+ * Detailní matematika je v jádru (`cesty.test.ts`). Tady se hlídá napojení:
+ * že Dílna bere ceny ze správného města a typu, že „nejlevnější město"
+ * vybírá podle vítězné cesty a že panel i medián znají runy.
+ */
+describe("F12 — koupit / vyrobit / enchantovat", () => {
+  const nast = {
+    mesto: "Caerleon", focus: false, denniBonus: 0, premium: true, sazbaStanice: 0,
+    pocetVyrobku: 10, rezimNakupu: "instant" as const, rezimProdeje: "instant" as const,
+    skupina: "zbrane", kategorie: [], mistoProdeje: "bm" as const, ztrataZasilek: 0,
+  };
+  const klic = klicDilny("T4_MAIN_AXE", 1);
+  const stavV = (mesto: string) => ({
+    klice: [klic], konfig: { mesto, naBM: true, ztrata: 0 }, override: {},
+  });
+
+  /** Levné suroviny .0 a runy v daném městě, drahé suroviny .1. */
+  function naplnMesto(s: InstanceType<typeof SkladCen>, mesto: string, runa: number) {
+    s.ulozRucne(mesto, "T4_PLANKS", 0, "sell_min", 100);
+    s.ulozRucne(mesto, "T4_METALBAR", 0, "sell_min", 100);
+    s.ulozRucne(mesto, "T4_PLANKS", 1, "sell_min", 5000);
+    s.ulozRucne(mesto, "T4_METALBAR", 1, "sell_min", 5000);
+    s.ulozRucne(mesto, "T4_RUNE", 0, "sell_min", runa);
+  }
+
+  it("zisk v Dílně je z nejlevnější cesty, ne z výroby", () => {
+    const s = new SkladCen();
+    naplnMesto(s, "Caerleon", 10);
+    s.ulozRucne("Black Market", "T4_MAIN_AXE", 1, "buy_max", 100_000);
+    const [v] = vyhodnotitDilnu(stavV("Caerleon"), s, undefined, HRA.konstanty, nast, nazev);
+
+    expect(v!.cesty!.vitez).toBe("enchantovat");
+    // Řádek skenu dál nese výrobu — a ta je ztrátovější než enchant.
+    expect(v!.radek!.vysledek!.zisk).toBeLessThan(ziskDilny(v!)!);
+  });
+
+  it("nejlevnější město vybírá podle zisku vítězné cesty", () => {
+    // Lymhurst: suroviny .1 levné → nejlepší výroba. Martlock: runy skoro
+    // zadarmo → enchant tam vyjde ještě líp. Vybrat se musí Martlock.
+    const s = new SkladCen();
+    naplnMesto(s, "Lymhurst", 1_000_000);
+    s.ulozRucne("Lymhurst", "T4_PLANKS", 1, "sell_min", 300);
+    s.ulozRucne("Lymhurst", "T4_METALBAR", 1, "sell_min", 300);
+    naplnMesto(s, "Martlock", 1);
+    s.ulozRucne("Black Market", "T4_MAIN_AXE", 1, "buy_max", 100_000);
+
+    const [v] = vyhodnotitDilnu(stavV(AUTO_MESTO), s, undefined, HRA.konstanty, nast, nazev);
+    expect(v!.mesto).toBe("Martlock");
+    expect(v!.cesty!.vitez).toBe("enchantovat");
+  });
+
+  it("runy se kupují ve městě výroby, ne jinde", () => {
+    const s = new SkladCen();
+    naplnMesto(s, "Caerleon", 10);
+    s.ulozRucne("Black Market", "T4_MAIN_AXE", 1, "buy_max", 100_000);
+    // V Lymhurstu jsou suroviny .0, ale runy ne → enchant tam nesmí
+    // vzniknout z caerleonské ceny run.
+    s.ulozRucne("Lymhurst", "T4_PLANKS", 0, "sell_min", 100);
+    s.ulozRucne("Lymhurst", "T4_METALBAR", 0, "sell_min", 100);
+    const [v] = vyhodnotitDilnu(stavV("Lymhurst"), s, undefined, HRA.konstanty, nast, nazev);
+    expect(v!.cesty!.enchantovat).toEqual({
+      ok: false, duvod: "chybi-cena", chybejici: [{ zaklad: "T4_RUNE", enchant: 0 }],
+    });
+  });
+
+  it("panel surovin nabídne suroviny .0 a zvlášť runy", () => {
+    const stav = { klice: [klicDilny("T4_MAIN_AXE", 2)], konfig: VYCHOZI_KONFIG, override: {} };
+    const suroviny = surovinyDilny(stav).map((x) => `${x.zaklad}#${x.enchant}`);
+    expect(suroviny).toContain("T4_PLANKS#2");
+    expect(suroviny).toContain("T4_PLANKS#0");
+    expect(suroviny.some((x) => x.includes("RUNE"))).toBe(false);
+    expect(runyDilny(stav).map((x) => x.zaklad).sort()).toEqual(["T4_RUNE", "T4_SOUL"]);
+  });
+
+  it(".0 položka runy ani suroviny .0 navíc nepotřebuje", () => {
+    const stav = { klice: [klicDilny("T4_MAIN_AXE", 0)], konfig: VYCHOZI_KONFIG, override: {} };
+    expect(runyDilny(stav)).toEqual([]);
+  });
+
+  it("30denní medián zná i runy a suroviny .0", () => {
+    const h = new SkladHistorie();
+    const den = (d: string, cena: number) =>
+      ({ avg_price: cena, item_count: 10, timestamp: `2026-07-${d}T00:00:00` });
+    const radek = (item_id: string, cena: number, location = "Caerleon") =>
+      ({ location, item_id, quality: 1, data: [den("20", cena), den("21", cena), den("22", cena)] });
+    h.naplnZAodp([
+      radek("T4_PLANKS#0", 100), radek("T4_METALBAR#0", 100), radek("T4_RUNE#0", 10),
+      radek("T4_MAIN_AXE#1", 100_000, "Black Market"),
+    ], (id) => ({ zaklad: id.split("#")[0]!, enchant: Number(id.split("#")[1]) }));
+
+    const [v] = vyhodnotitDilnu(
+      { ...stavV("Caerleon"), zdrojCen: "historie" as const },
+      new SkladCen(), h, HRA.konstanty, nast, nazev,
+    );
+    expect(v!.cesty!.enchantovat.ok).toBe(true);
+    expect(v!.cesty!.vitez).toBe("enchantovat");
+  });
+});
+
+/**
+ * Ochrana dat (Mirek, 2026-09-15: „extrémně důležité").
+ *
+ * Snímek úložiště v DNEŠNÍM formátu — ruční ceny a dílna — se musí po F12
+ * načíst beze ztráty a ruční cena run se musí použít ve výpočtu.
+ * Kdyby někdo zvedl verzi formátu nebo změnil tvar uložených dat,
+ * tenhle test spadne dřív, než se to dostane k uživateli.
+ */
+describe("F12 — uložená ruční data přežijí", () => {
+  it("ruční ceny a dílna ze starého uložení se načtou a použijí", async () => {
+    const { nacti } = await import("../src/stav/uloziste");
+    localStorage.setItem("albion:v1:europe", JSON.stringify({
+      verze: 1, ulozeno: "2026-09-01T00:00:00.000Z", nastaveni: {},
+      ceny: [
+        { mesto: "Caerleon", zaklad: "T4_RUNE", enchant: 0, typ: "sell_min", hodnota: 10, zdroj: "rucne", cas: "2026-01-01T00:00:00" },
+        { mesto: "Caerleon", zaklad: "T4_PLANKS", enchant: 0, typ: "sell_min", hodnota: 100, zdroj: "rucne", cas: "2026-01-01T00:00:00" },
+        { mesto: "Caerleon", zaklad: "T4_METALBAR", enchant: 0, typ: "sell_min", hodnota: 100, zdroj: "rucne", cas: "2026-01-01T00:00:00" },
+        { mesto: "Black Market", zaklad: "T4_MAIN_AXE", enchant: 1, typ: "buy_max", hodnota: 100000, zdroj: "rucne", cas: "2026-01-01T00:00:00" },
+      ],
+    }));
+    localStorage.setItem("albion:dilna:v2", JSON.stringify({
+      klice: ["T4_MAIN_AXE#1"], konfig: { mesto: "Caerleon", naBM: true, ztrata: 0 },
+      override: {}, zdrojCen: "orderbook",
+    }));
+
+    const ulozene = nacti("europe");
+    // Ruční ceny nestárnou — i půl roku staré musí zůstat všechny čtyři.
+    expect(ulozene.ceny).toHaveLength(4);
+
+    const sklad = new SkladCen();
+    sklad.obnov(ulozene.ceny);
+    const stav = nactiDilnu();
+    expect(stav.klice).toEqual(["T4_MAIN_AXE#1"]);
+
+    const [v] = vyhodnotitDilnu(stav, sklad, undefined, HRA.konstanty, {
+      mesto: "Caerleon", focus: false, denniBonus: 0, premium: true, sazbaStanice: 0,
+      pocetVyrobku: 1, rezimNakupu: "instant", rezimProdeje: "instant",
+      skupina: "zbrane", kategorie: [], mistoProdeje: "bm", ztrataZasilek: 0,
+    }, nazev);
+    // 24 surovin × 100 × (1 − RRR) + 288 × 10 za runy — ruční ceny se použily.
+    expect(v!.cesty!.enchantovat.ok).toBe(true);
+    expect(v!.cesty!.metriky).not.toBeNull();
   });
 });

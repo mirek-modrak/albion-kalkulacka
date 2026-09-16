@@ -11,7 +11,7 @@
  */
 
 import { Fragment, useState } from "react";
-import type { TypCeny } from "@albion/jadro";
+import type { Cesta, StavCesty, TypCeny, VysledekCest } from "@albion/jadro";
 import {
   AUTO_MESTO, kamSeProdava, konfigProKlic,
   type KonfigDilny, type StavDilny, type VysledekDilny,
@@ -80,11 +80,9 @@ export function TabulkaDilny(p: Props) {
                             className="text-left font-medium hover:underline">
                       {nazev}
                     </button>
-                    {!v.radek?.vysledek && (
+                    {!v.cesty?.metriky && (
                       <p className="text-xs text-slate-500">
-                        {v.radek?.chybejici?.length
-                          ? `Chybí cena: ${v.radek.chybejici.join(", ")}`
-                          : "Zatím bez ceny"}
+                        {popisChybejicich(v, nazev, p.nazevPolozky)}
                       </p>
                     )}
                   </td>
@@ -95,7 +93,7 @@ export function TabulkaDilny(p: Props) {
                            rozbaleny={jeRozbaleny}
                            prepniRozbaleni={() => setRozbaleny(jeRozbaleny ? null : v.klic)}
                            sklad={p.sklad} rezimProdeje={p.rezimProdeje}
-                           poZmeneCeny={p.poZmeneCeny} />
+                           poZmeneCeny={p.poZmeneCeny} nazevPolozky={p.nazevPolozky} />
                   ))}
 
                   <td className="px-3 py-2 text-right">
@@ -112,7 +110,7 @@ export function TabulkaDilny(p: Props) {
                       <NastaveniPolozky
                         efektivni={efektivni} globalni={p.stav.konfig} override={override}
                         setOverride={(k) => p.setOverride(v.klic, k)} />
-                      {v.radek?.stav === "podezrele" && (
+                      {(v.cesty?.metriky?.marze ?? 0) > PRAH_PODEZRELE_MARZE && (
                         <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
                           podezřelá marže
                         </p>
@@ -160,7 +158,7 @@ function Hlavicka({ sloupec, vpravo, filtr, setFiltr, children }: {
 }
 
 function Bunka({ sloupec, vysledek, davka, efektivni, override, rozbaleny,
-                 prepniRozbaleni, sklad, rezimProdeje, poZmeneCeny }: {
+                 prepniRozbaleni, sklad, rezimProdeje, poZmeneCeny, nazevPolozky }: {
   sloupec: DefiniceSloupce;
   vysledek: VysledekDilny;
   davka: number;
@@ -171,8 +169,12 @@ function Bunka({ sloupec, vysledek, davka, efektivni, override, rozbaleny,
   sklad: SkladCen;
   rezimProdeje: RezimCeny;
   poZmeneCeny: () => void;
+  nazevPolozky: (zaklad: string, enchant: number) => string;
 }) {
-  const v = vysledek.radek?.vysledek ?? null;
+  // Zisk, marže a spol. z NEJLEVNĚJŠÍ cesty (F12), ne z řádku skenu —
+  // ten nese jen výrobu ze surovin.
+  const v = vysledek.cesty?.metriky ?? null;
+  const cesty = vysledek.cesty;
   const trida = `px-3 py-2 ${sloupec.vpravo ? "text-right" : ""}`;
   const prazdno = <td className={trida}>—</td>;
 
@@ -208,8 +210,17 @@ function Bunka({ sloupec, vysledek, davka, efektivni, override, rozbaleny,
     }
 
     case "zisk":
-      return v
-        ? <td className={`${trida} font-semibold ${barvaHodnoty(v.zisk)}`}>{seZnamenkem(v.zisk)}</td>
+      return v && cesty?.vitez
+        ? (
+          <td className={`${trida} font-semibold ${barvaHodnoty(v.zisk)}`}>
+            {seZnamenkem(v.zisk)}
+            {/* Z čeho číslo vzniklo — bez toho by nešlo poznat, proč se
+                zisk liší od rozpadu výroby v detailu. */}
+            <span className="ml-1 text-[10px] font-normal uppercase text-slate-400">
+              {POPIS_CESTY[cesty.vitez]}
+            </span>
+          </td>
+        )
         : prazdno;
 
     case "marze":
@@ -236,14 +247,16 @@ function Bunka({ sloupec, vysledek, davka, efektivni, override, rozbaleny,
       return <td className={trida}>{t === null ? "—" : `T${t}`}</td>;
     }
 
-    case "naklad":
-      return v
-        ? <td className={trida}>{cislo(v.nakladyCelkem / Math.max(1, davka), 0)}</td>
+    case "koupit":
+    case "vyrobit":
+    case "enchantovat":
+      return cesty
+        ? <BunkaCesty cesta={sloupec.id as Cesta} cesty={cesty} trida={trida} nazevPolozky={nazevPolozky} />
         : prazdno;
 
     case "trzba":
-      return v
-        ? <td className={trida}>{cislo(v.trzbaHruba / Math.max(1, davka), 0)}</td>
+      return cesty?.trzba
+        ? <td className={trida}>{cislo(cesty.trzba.trzbaHruba / Math.max(1, davka), 0)}</td>
         : prazdno;
 
     case "likvidita":
@@ -268,4 +281,71 @@ function Bunka({ sloupec, vysledek, davka, efektivni, override, rozbaleny,
     default:
       return prazdno;
   }
+}
+
+/** Stejný práh jako „podezřelá marže" ve skenu. */
+const PRAH_PODEZRELE_MARZE = 3;
+
+const POPIS_CESTY: Record<Cesta, string> = {
+  koupit: "koupit", vyrobit: "vyrobit", enchantovat: "enchant",
+};
+
+function nazvyChybejicich(
+  s: StavCesty, nazevPolozky: (zaklad: string, enchant: number) => string,
+): string {
+  return s.ok ? "" : s.chybejici.map((c) => nazevPolozky(c.zaklad, c.enchant)).join(", ");
+}
+
+/**
+ * Náklad na kus jedné cesty.
+ *
+ * Nejlevnější cesta je zeleně — podle ní se počítá zisk. Nedostupná cesta
+ * má „—" a titulek s důvodem: „tahle cesta u položky není" a „chybí cena X"
+ * jsou dvě různé věci a uživatel musí vědět, jestli má co doplnit.
+ */
+function BunkaCesty({ cesta, cesty, trida, nazevPolozky }: {
+  cesta: Cesta;
+  cesty: VysledekCest;
+  trida: string;
+  nazevPolozky: (zaklad: string, enchant: number) => string;
+}) {
+  const s = cesty[cesta];
+  if (!s.ok) {
+    const titulek = s.duvod === "neexistuje"
+      ? "Tahle cesta u položky není"
+      : `Chybí cena: ${nazvyChybejicich(s, nazevPolozky)}`;
+    return (
+      <td className={`${trida} text-slate-400`} title={titulek}>
+        {s.duvod === "chybi-cena" ? <span className="cursor-help underline decoration-dotted">?</span> : "—"}
+      </td>
+    );
+  }
+  const vitez = cesty.vitez === cesta;
+  return (
+    <td className={`${trida} ${vitez
+      ? "font-semibold text-emerald-600 dark:text-emerald-400" : "text-slate-500"}`}
+        title={vitez ? "Nejlevnější cesta — z ní se počítá zisk" : undefined}>
+      {cislo(s.nakladNaKus, 0)}
+    </td>
+  );
+}
+
+/**
+ * Proč řádek nemá zisk.
+ *
+ * Bez prodejní ceny se zisk nespočítá nikdy. S prodejní cenou chybí
+ * ceny u všech tří cest — vypíše se, co doplnit, bez duplicit.
+ */
+function popisChybejicich(
+  v: VysledekDilny, nazev: string, nazevPolozky: (zaklad: string, enchant: number) => string,
+): string {
+  const c = v.cesty;
+  if (!c) return "Zatím bez ceny";
+  if (!c.trzba) return `Chybí prodejní cena: ${nazev}`;
+  const chybi = new Set<string>();
+  for (const s of [c.koupit, c.vyrobit, c.enchantovat]) {
+    if (s.ok || s.duvod !== "chybi-cena") continue;
+    for (const x of s.chybejici) chybi.add(nazevPolozky(x.zaklad, x.enchant));
+  }
+  return chybi.size > 0 ? `Chybí cena: ${[...chybi].join(", ")}` : "Zatím bez ceny";
 }

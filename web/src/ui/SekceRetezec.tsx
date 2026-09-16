@@ -51,27 +51,40 @@ export function SekceRetezec(p: Props) {
 
   const souhrn = useMemo(() => shrnRetezec(koren), [koren]);
 
-  /** Existuje pro tenhle stupeň vůbec povýšení runou? U .0 a .4 ne. */
-  const cestaEnchantu = p.polozka.vylepseni.find((v) => v.naEnchant === p.enchant);
+  /**
+   * Stupně enchantu od .0 až po tenhle — enchant vede vždy od vyrobeného .0.
+   * Null, když cesta neexistuje (.0, .4, chybí vylepšení v datech).
+   */
+  const krokyEnchantu = useMemo(() => {
+    if (p.enchant === 0) return null;
+    const kroky = [];
+    for (let e = 1; e <= p.enchant; e++) {
+      const krok = p.polozka.vylepseni.find((v) => v.naEnchant === e);
+      if (!krok) return null;
+      kroky.push(krok);
+    }
+    return kroky;
+  }, [p.polozka, p.enchant]);
+  const cestaEnchantu = krokyEnchantu !== null;
 
   /**
    * Co brání spočítat enchantování.
    *
    * Cesta, která existuje, ale nemá cenu, se NESMÍ jen tiše vynechat —
    * uživatel by dostal doporučení „vyrobit", aniž by tušil, že třetí
-   * možnost se vůbec nepočítala. Chybět může buď runa, nebo kus o stupeň
-   * níž; když mají runy ceny, je na vině ten kus.
+   * možnost se vůbec nepočítala. Chybět může runa kteréhokoli stupně,
+   * nebo nejde vyrobit .0 kus (chybí ceny jeho surovin).
    */
   const chybiProEnchant = useMemo(() => {
-    if (!cestaEnchantu || koren.nakladEnchantem !== null) return null;
+    if (!krokyEnchantu || koren.nakladEnchantem !== null) return null;
     const typ = typProNakup(p.nastaveni.rezimNakupu);
-    const bezCeny = cestaEnchantu.vstupy
+    const bezCeny = krokyEnchantu.flatMap((k) => k.vstupy)
       .filter((v) => p.sklad.ziskej(p.mesto, v.zaklad, v.enchant, typ) === undefined)
       .map((v) => p.nazevPolozky(v.zaklad, v.enchant));
     return bezCeny.length > 0
       ? bezCeny.join(", ")
-      : p.nazevPolozky(p.polozka.zaklad, p.enchant - 1);
-  }, [cestaEnchantu, koren, p.sklad, p.mesto, p.nastaveni.rezimNakupu, p.verzeCen]);
+      : `suroviny pro výrobu ${p.nazevPolozky(p.polozka.zaklad, 0)}`;
+  }, [krokyEnchantu, koren, p.sklad, p.mesto, p.nastaveni.rezimNakupu, p.verzeCen]);
 
   if (koren.zpusob === "nedostupne") {
     return <p className="py-2 text-sm text-slate-500">Chybí ceny, nelze porovnat.</p>;

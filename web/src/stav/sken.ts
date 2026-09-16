@@ -317,46 +317,11 @@ export function spocitatSken(
   // Jedna kontrola pro celý sken, ne pro každý řádek zvlášť.
   const maHistorii = historie !== undefined && historie.konec !== null;
 
-  // Kde se PRODÁVÁ. Liší se od `mesto` jen u Black Marketu — nakupuje se
-  // a vyrábí pořád v `mesto`, protože na BM nejsou ani suroviny, ani stanice.
-  // Vyjmenovat kladné hodnoty, ne `!== "mesto"`. Uložené nastavení ze starší
-  // verze tohle pole nemá a `undefined !== "mesto"` by zapnulo Black Market
-  // někomu, kdo o něj nepožádal.
-  const sPrevozem = nastaveni.mistoProdeje === "bm-s-prevozem";
-  const naBM = (sPrevozem || nastaveni.mistoProdeje === "bm")
-    && bmObchodujeSkupinu(nastaveni.skupina)
-    // Bez převozu se na BM dostaneš jen z Caerleonu.
-    && (sPrevozem || nastaveni.mesto === BLACK_MARKET_MESTO);
-
-  // Ověřit kladnou hodnotu, ne jen `?? mesto`: uložené nastavení ze starší
-  // verze pole nemá a prázdný řetězec z poškozených dat by znamenal
-  // hledání cen ve městě, které neexistuje — tedy „chybí cena" u všeho.
-  const jineMesto = (x: string | undefined) => (x && x !== "" ? x : nastaveni.mesto);
-
-  // Kde se NAKUPUJE. Liší se od města výroby jen u refiningu, kde se
-  // surovina kupuje, kde je levná, a veze do města s bonusem.
-  const mestoNakupu = jineMesto(nastaveni.nakupniMesto);
-
-  // Kde se PRODÁVÁ. Na Black Marketu je to vždy BM (jeden jediný, v Caerleonu),
-  // jinak město výroby — nebo to, které si vyžádal refining.
-  const mistoProdeje = naBM ? BLACK_MARKET : jineMesto(nastaveni.prodejniMesto);
-  const typProdej = typProdejeProMisto(nastaveni.rezimProdeje, naBM);
-
-  // Na Black Marketu se neklade order, prodává se rovnou do výkupu —
-  // proto se neplatí setup fee. Daň z prodeje platí dál.
-  const rezimProdeje = naBM ? "instant" : nastaveni.rezimProdeje;
-
-  // Riziko jen když se opravdu jede. Z Caerleonu na BM se nejede nikam,
-  // takže tam musí být nula — jinak by se Caerleon trestal za cestu,
-  // kterou nepodniká, a celé srovnání by bylo posunuté. Totéž pro prodej
-  // v tomtéž městě, kde se vyrábí.
-  const vezeSeNaProdej = naBM
-    ? sPrevozem && nastaveni.mesto !== BLACK_MARKET_MESTO
-    : mistoProdeje !== nastaveni.mesto;
-  const ztrata = vezeSeNaProdej ? nastaveni.ztrataZasilek : 0;
+  const {
+    naBM, mestoNakupu, mistoProdeje, typProdej, rezimProdeje, ztrata, typNakup,
+  } = obchodSkenu(nastaveni);
 
   const radky: RadekSkenu[] = [];
-  const typNakup = typProNakup(nastaveni.rezimNakupu);
 
   const kombinace = kombinaceOverride
     ?? kombinaceProSken(nastaveni.skupina, nastaveni.kategorie);
@@ -431,9 +396,7 @@ export function spocitatSken(
       premium: nastaveni.premium,
       // Sazba té stanice, ve které se vyrábí TAHLE položka. Bez sazeb
       // po stanicích se použije jedno společné číslo jako dřív.
-      sazbaStanice: nastaveni.sazbyStanic
-        ? sazbaProPolozku(nastaveni.sazbyStanic, polozka)
-        : nastaveni.sazbaStanice,
+      sazbaStanice: sazbaSkenu(nastaveni, polozka),
       rezimNakupu: nastaveni.rezimNakupu,
       rezimProdeje,
       // Zůstává pravdivé, i když se při prodeji do výkupu setup fee neplatí
@@ -466,6 +429,79 @@ export function spocitatSken(
   }
 
   return radky;
+}
+
+/** Sazba stanice pro položku: po stanicích, jinak jedno společné číslo. */
+export function sazbaSkenu(nastaveni: NastaveniSkenu, polozka: HerniPolozka): number {
+  return nastaveni.sazbyStanic
+    ? sazbaProPolozku(nastaveni.sazbyStanic, polozka)
+    : nastaveni.sazbaStanice;
+}
+
+/** Kde se nakupuje a kam, jak a s jakým rizikem se prodává. */
+export interface ObchodSkenu {
+  naBM: boolean;
+  mestoNakupu: string;
+  /** Město, nebo `BLACK_MARKET`. */
+  mistoProdeje: string;
+  typNakup: TypCeny;
+  typProdej: TypCeny;
+  /** Na BM vždy „instant" — do výkupu se neklade order. */
+  rezimProdeje: RezimCeny;
+  /** Ztráta zásilek, jen když se opravdu jede. */
+  ztrata: number;
+}
+
+/**
+ * Pravidla „kde se kupuje a kam se prodává" na JEDNOM místě.
+ *
+ * Vytažené ze `spocitatSken`, protože stejná pravidla potřebuje Dílna
+ * pro porovnání tří cest. Opsaná kopie by se rozešla — a pak by tabulka
+ * počítala zisk z jiné ceny, než kterou ukazuje řádek skenu.
+ */
+export function obchodSkenu(nastaveni: NastaveniSkenu): ObchodSkenu {
+  // Kde se PRODÁVÁ. Liší se od `mesto` jen u Black Marketu — nakupuje se
+  // a vyrábí pořád v `mesto`, protože na BM nejsou ani suroviny, ani stanice.
+  // Vyjmenovat kladné hodnoty, ne `!== "mesto"`. Uložené nastavení ze starší
+  // verze tohle pole nemá a `undefined !== "mesto"` by zapnulo Black Market
+  // někomu, kdo o něj nepožádal.
+  const sPrevozem = nastaveni.mistoProdeje === "bm-s-prevozem";
+  const naBM = (sPrevozem || nastaveni.mistoProdeje === "bm")
+    && bmObchodujeSkupinu(nastaveni.skupina)
+    // Bez převozu se na BM dostaneš jen z Caerleonu.
+    && (sPrevozem || nastaveni.mesto === BLACK_MARKET_MESTO);
+
+  // Ověřit kladnou hodnotu, ne jen `?? mesto`: uložené nastavení ze starší
+  // verze pole nemá a prázdný řetězec z poškozených dat by znamenal
+  // hledání cen ve městě, které neexistuje — tedy „chybí cena" u všeho.
+  const jineMesto = (x: string | undefined) => (x && x !== "" ? x : nastaveni.mesto);
+
+  // Kde se NAKUPUJE. Liší se od města výroby jen u refiningu, kde se
+  // surovina kupuje, kde je levná, a veze do města s bonusem.
+  const mestoNakupu = jineMesto(nastaveni.nakupniMesto);
+
+  // Kde se PRODÁVÁ. Na Black Marketu je to vždy BM (jeden jediný, v Caerleonu),
+  // jinak město výroby — nebo to, které si vyžádal refining.
+  const mistoProdeje = naBM ? BLACK_MARKET : jineMesto(nastaveni.prodejniMesto);
+  const typProdej = typProdejeProMisto(nastaveni.rezimProdeje, naBM);
+
+  // Na Black Marketu se neklade order, prodává se rovnou do výkupu —
+  // proto se neplatí setup fee. Daň z prodeje platí dál.
+  const rezimProdeje = naBM ? "instant" : nastaveni.rezimProdeje;
+
+  // Riziko jen když se opravdu jede. Z Caerleonu na BM se nejede nikam,
+  // takže tam musí být nula — jinak by se Caerleon trestal za cestu,
+  // kterou nepodniká, a celé srovnání by bylo posunuté. Totéž pro prodej
+  // v tomtéž městě, kde se vyrábí.
+  const vezeSeNaProdej = naBM
+    ? sPrevozem && nastaveni.mesto !== BLACK_MARKET_MESTO
+    : mistoProdeje !== nastaveni.mesto;
+  const ztrata = vezeSeNaProdej ? nastaveni.ztrataZasilek : 0;
+
+  return {
+    naBM, mestoNakupu, mistoProdeje, rezimProdeje, ztrata,
+    typNakup: typProNakup(nastaveni.rezimNakupu), typProdej,
+  };
 }
 
 /** Hodnota metriky pro řazení. Chybějící výsledek jde vždy dolů. */

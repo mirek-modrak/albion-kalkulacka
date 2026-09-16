@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TypCeny } from "@albion/jadro";
+import type { TypCeny, VysledekCest } from "@albion/jadro";
 import type { Server } from "../data/aodp";
 import type { Lokace } from "@albion/jadro";
 import type { RadekSkenu, NastaveniSkenu } from "../stav/sken";
@@ -39,6 +39,14 @@ interface Props {
   verzeCen: number;
   /** Které město se právě zobrazuje v rozpadu. */
   zobrazeneMesto?: string;
+  /**
+   * Tři cesty z tabulky Dílny (F12). Jen v Dílně.
+   *
+   * Rozpad níž je vždy VÝROBA ze surovin. Když tabulka počítá zisk z jiné
+   * cesty, detail to musí říct — jinak uživatel vidí dvě různá čísla zisku
+   * a neví proč.
+   */
+  cestyDilny?: VysledekCest | null;
 }
 
 const POPIS_TYPU: Record<TypCeny, string> = {
@@ -278,6 +286,10 @@ export function DetailPolozky(p: Props) {
             )?.hodnota ?? null}
           />
         </Sekce>
+
+        {p.cestyDilny?.vitez && p.cestyDilny.vitez !== "vyrobit" && (
+          <PoznamkaCesty cesty={p.cestyDilny} davka={nastaveni.pocetVyrobku} />
+        )}
 
         {!v ? (
           <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800
@@ -634,4 +646,22 @@ function RadekCeny(props: {
 
 function stariZ(cas: string): number {
   return (Date.now() - new Date(cas.endsWith("Z") ? cas : `${cas}Z`).getTime()) / 3_600_000;
+}
+
+/** Upozornění, že tabulka Dílny počítá z jiné cesty než rozpad výroby. */
+function PoznamkaCesty({ cesty, davka }: { cesty: VysledekCest; davka: number }) {
+  const vitez = cesty.vitez;
+  if (!vitez) return null;
+  const s = cesty[vitez];
+  if (!s.ok) return null;
+  const popis = vitez === "koupit" ? "koupit hotový kus" : "vyrobit .0 a enchantovat";
+  return (
+    <p className="mb-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-900
+                  dark:bg-violet-950/40 dark:text-violet-200">
+      Tabulka Dílny počítá zisk z nejlevnější cesty: <b>{popis}</b> za{" "}
+      <b>{cislo(s.nakladNaKus, 0)}</b> / ks
+      {cesty.metriky && <> → zisk <b>{seZnamenkem(cesty.metriky.zisk)}</b> / {cislo(davka)} ks</>}.
+      Rozpad níž ukazuje výrobu ze surovin.
+    </p>
+  );
 }

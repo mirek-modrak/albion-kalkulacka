@@ -59,10 +59,17 @@ export interface UzelRetezce {
   /** Focus na jeden kus, když se vyrábí. Enchantování focus nestojí. */
   focus: number;
   /**
-   * Vstupy zvolené cesty — suroviny při výrobě, nebo kus o stupeň níž
-   * a runy při enchantování. U nákupu prázdné.
+   * Vstupy zvolené cesty — suroviny při výrobě, nebo vyrobený .0 kus
+   * a runy všech stupňů při enchantování. U nákupu prázdné.
    */
   vstupy: { uzel: UzelRetezce; pocetNaKus: number; efektivneNaKus: number }[];
+  /**
+   * Suroviny výroby — vyplněné i tehdy, když vyhrála jiná cesta.
+   *
+   * Potřebuje je cesta enchantem: ta vede vždy přes VYROBENÝ .0 kus,
+   * i když by .0 šel koupit levněji, a v rozpadu musí ukázat, z čeho se vyrábí.
+   */
+  vstupyVyroby: { uzel: UzelRetezce; pocetNaKus: number; efektivneNaKus: number }[];
 }
 
 export interface KontextRetezce {
@@ -153,7 +160,7 @@ function uzel(
     naklad: cenaNaTrhu,
     cenaNaTrhu, nakladVyrobou: null, nakladEnchantem: null,
     usporaVyrobou: null, uspora: null,
-    returnRate: 0, focus: 0, vstupy: [],
+    returnRate: 0, focus: 0, vstupy: [], vstupyVyroby: [],
   });
 
   // Konec rekurze: položka bez receptu (raw surovina se sbírá, nevyrábí).
@@ -258,6 +265,7 @@ function uzel(
     vstupy: zpusob === "vyrobit" ? vstupyVyroby
       : zpusob === "enchantovat" ? enchantem.vstupy
         : [],
+    vstupyVyroby,
   });
 }
 
@@ -275,7 +283,13 @@ function uzel(
  *     runami — ověřeno u majitele projektu 2026-09-06.
  *  3. **Nestojí to focus.** Tamtéž.
  *
- * Rekurze skončí vždy: enchant klesá o jedna a na nule cesta neexistuje.
+ * **Vede vždy od VYROBENÉHO .0 kusu** (Mirek, 2026-09-15): .0 → runy → .1
+ * → duše → .2 → relikvie → .3. Žádné „kup .0", „vyrob .1 a dej na .2" ani
+ * „kup .1". Dřív se tu na každém stupni hledalo minimum, takže rozpad
+ * klidně doporučil postup, kterým Mirek nikdy nejde. Stejné pravidlo
+ * počítá tabulka Dílny (`cesty.ts`).
+ *
+ * Rekurze skončí vždy: .0 kus sám cestu enchantem nemá.
  */
 function cestaEnchantem(
   polozka: HerniPolozka,
@@ -286,30 +300,45 @@ function cestaEnchantem(
   hloubka: number,
 ): { naklad: number | null; vstupy: UzelRetezce["vstupy"] } {
   const nic = { naklad: null, vstupy: [] };
+  if (enchant === 0) return nic;
 
-  const cesta = polozka.vylepseni.find((v) => v.naEnchant === enchant);
-  if (enchant === 0 || !cesta || cesta.vstupy.length === 0) return nic;
+  // Každý stupeň 1..e musí mít vylepšení. Data ho mají jen na .1–.3,
+  // takže .4 cestu nemá — nesmí se dovodit z „enchant − 1".
+  const kroky = [];
+  for (let e = 1; e <= enchant; e++) {
+    const krok = polozka.vylepseni.find((v) => v.naEnchant === e);
+    if (!krok || krok.vstupy.length === 0) return nic;
+    kroky.push(krok);
+  }
 
-  // Kus o stupeň níž — a to rovnou tou nejlevnější cestou, takže se řetěz
-  // enchantů (.0 → .1 → .2) poskládá rekurzí, ne zvláštní smyčkou.
-  const nizsi = uzel(
-    polozka.zaklad, (enchant - 1) as Enchant, kontext, kes, naCeste, hloubka + 1,
-  );
-  if (nizsi.naklad === null) return nic;
+  // Základ .0 VŽDY vyrobený — i kdyby byl na trhu levnější. Uzel se proto
+  // přepíše na výrobu jako kopie; do keše se nevrací, protože jinde
+  // v řetězu smí .0 dál vyhrát nákupem.
+  const nula = uzel(polozka.zaklad, 0, kontext, kes, naCeste, hloubka + 1);
+  if (nula.nakladVyrobou === null) return nic;
+  const vyrobena: UzelRetezce = {
+    ...nula,
+    zpusob: "vyrobit",
+    naklad: nula.nakladVyrobou,
+    uspora: nula.usporaVyrobou,
+    vstupy: nula.vstupyVyroby,
+  };
 
-  let naklad = nizsi.naklad;
+  let naklad = nula.nakladVyrobou;
   const vstupy: UzelRetezce["vstupy"] = [
-    { uzel: nizsi, pocetNaKus: 1, efektivneNaKus: 1 },
+    { uzel: vyrobena, pocetNaKus: 1, efektivneNaKus: 1 },
   ];
 
-  for (const v of cesta.vstupy) {
-    const dite = uzel(v.zaklad, v.enchant, kontext, kes, naCeste, hloubka + 1);
-    // Bez ceny runy cesta neexistuje. Vrátit ji s neúplným nákladem by
-    // znamenalo doporučit enchantování za cenu, která není celá.
-    if (dite.naklad === null) return nic;
+  for (const krok of kroky) {
+    for (const v of krok.vstupy) {
+      const dite = uzel(v.zaklad, v.enchant, kontext, kes, naCeste, hloubka + 1);
+      // Bez ceny runy cesta neexistuje. Vrátit ji s neúplným nákladem by
+      // znamenalo doporučit enchantování za cenu, která není celá.
+      if (dite.naklad === null) return nic;
 
-    vstupy.push({ uzel: dite, pocetNaKus: v.pocet, efektivneNaKus: v.pocet });
-    naklad += dite.naklad * v.pocet;
+      vstupy.push({ uzel: dite, pocetNaKus: v.pocet, efektivneNaKus: v.pocet });
+      naklad += dite.naklad * v.pocet;
+    }
   }
 
   return { naklad, vstupy };
@@ -351,7 +380,8 @@ export function shrnRetezec(korenu: UzelRetezce): {
       // Focus se ZÁMĚRNĚ nepřičítá — uzel ho v sobě má z receptu na výrobu,
       // ale tou cestou se nejde. Přičíst ho by nafouklo spotřebu focusu
       // o dávku, kterou nikdy nespustíš.
-      krokuEnchantu++;
+      // Uzel enchantu přidá tolik stupňů, kolik má enchant (.0 → .2 = dva kroky).
+      krokuEnchantu += u.enchant;
     } else {
       return;   // koupit / nedostupné — dál se řetěz nerozvíjí
     }

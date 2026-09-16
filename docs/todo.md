@@ -7,6 +7,24 @@ Věci, které nejsou blokující, ale je potřeba je někdy dořešit.
 
 ## 🟡 Střední priorita
 
+### 00. Detail vs. tabulka Dílny — dva modely nákladu (F12)
+
+**Stav:** zapsáno 2026-09-15 při F12 (viz [f12-plan.md](f12-plan.md) §5).
+
+Tabulka Dílny (`jadro/src/cesty.ts`) bere suroviny jen z trhu a počítá
+setup fee u buy orderu. Sekce „Koupit, vyrobit, nebo enchantovat?" v detailu
+(`jadro/src/retezec.ts`) zvažuje i vlastní zpracování surovin (prkna z klád)
+a setup fee nepočítá. Náklad „Enchant / ks" v tabulce a „Enchantovat za"
+v detailu se proto můžou lišit. Obojí už vede enchant od vyrobeného .0.
+
+**Možné řešení:** přidat do řetězu setup fee a v tabulce volitelně
+brát suroviny z řetězu.
+
+### 01. Enchant .3 → .4 — ověřit ve hře
+
+Herní data (`vylepseni`) mají povýšení jen na .1–.3, takže u .4 kusů
+je cesta enchantem vždy „—". Ověřit, jestli ve hře .3 → .4 jde a čím.
+
 ### 0. Sazby stanic zastarávají a nejde to poznat
 
 **Stav:** zapsáno 2026-08-10 při F11 (viz [f11-plan.md](f11-plan.md) §5).

@@ -313,3 +313,43 @@ describe("uložení filtru", () => {
     expect(n.razeni).toBe("zisk");
   });
 });
+
+/**
+ * F12 — háček `zisk`: Dílna počítá zisk z nejlevnější cesty, ne z výroby.
+ */
+describe("háček zisku (Dílna, F12)", () => {
+  // Řádek skenu (výroba) je ztrátový, ale přes enchant položka vydělává.
+  const ztratovaVyroba = polozka("T4_AXE#1", -500, "T4 Axe");
+  const bezCeny = polozka("T5_AXE#1", null, "T5 Axe");
+  const ziskyCest = new Map<string, number | null>([["T4_AXE#1", 800], ["T5_AXE#1", null]]);
+  const sHackem = { ...doplnky, zisk: (v: Vysledek) => ziskyCest.get(v.klic) ?? null };
+
+  it("jen ziskové NESCHOVÁ položku ziskovou přes enchant", () => {
+    const v = filtrujARad([ztratovaVyroba], filtr({ jenZiskove: true }), sHackem);
+    expect(v.zobrazene).toHaveLength(1);
+  });
+
+  it("bez háčku se chová jako dřív (Refining, Příležitosti)", () => {
+    const v = filtrujARad([ztratovaVyroba], filtr({ jenZiskove: true }), doplnky);
+    expect(v.zobrazene).toHaveLength(0);
+  });
+
+  it("zisk null z háčku = bez ceny → skryje se a řadí se dolů", () => {
+    // Řádek skenu může mít výsledek výroby, háček ale říká „nejde spočítat".
+    const sVyrobou = polozka("T6_AXE#1", 100, "T6 Axe");
+    ziskyCest.set("T6_AXE#1", null);
+    expect(filtrujARad([sVyrobou], filtr({ skrytBezCeny: true }), sHackem).zobrazene).toHaveLength(0);
+    const serazene = filtrujARad([sVyrobou, ztratovaVyroba, bezCeny], filtr({ razeni: "nazev" }), sHackem);
+    expect(serazene.zobrazene).toHaveLength(3);
+  });
+});
+
+describe("uložené řazení podle zrušeného sloupce", () => {
+  it("„naklad\" z dřívější verze spadne na výchozí řazení", async () => {
+    localStorage.setItem("albion:filtr-dilny:v1", JSON.stringify({ razeni: "naklad", jenZiskove: true }));
+    const f = nactiFiltr();
+    expect(f.razeni).toBe("zisk");
+    // Ostatní volby filtru se přitom neztratí.
+    expect(f.jenZiskove).toBe(true);
+  });
+});

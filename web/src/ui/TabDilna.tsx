@@ -11,12 +11,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { TypCeny } from "@albion/jadro";
+import type { Cesta, TypCeny } from "@albion/jadro";
 import type { RezimCeny } from "../stav/sken";
 import { MESTA } from "../data/hra";
 import type { SkladCen } from "../stav/skladCen";
 import {
-  AUTO_MESTO, DILNA_MESTO, klicDilny,
+  AUTO_MESTO, DILNA_MESTO, klicDilny, ziskDilny,
   type KonfigDilny, type PolozkaKatalogu, type StavDilny, type VysledekDilny,
   type ZdrojCen,
 } from "../stav/dilna";
@@ -26,7 +26,7 @@ import { PresetyDilny } from "./PresetyDilny";
 import { skupinaProKategorii } from "../data/kategorie";
 import {
   dostupneEnchanty, dostupneTiery, filtrujARad, nactiFiltr, ulozFiltr,
-  vychoziSmer, type NastaveniFiltru,
+  vychoziSmer, type NastaveniFiltru, type Razeni,
 } from "../stav/filtrDilny";
 import {
   SLOUPCE, nactiSkryte, prepniSloupec, skryvamePodleCehoRadime, ulozSkryte, viditelne,
@@ -50,6 +50,34 @@ interface Props {
   uprav: (stav: StavDilny) => void;
   poZmeneCeny: () => void;
   otevritDetail: (klic: string) => void;
+}
+
+/**
+ * Hodnota pro řazení podle vítězné cesty.
+ *
+ * Undefined = „tohle neumím" — likviditu a stáří dopočítá sdílený filtr.
+ * Nedostupná cesta jde při vzestupném řazení nákladu na konec.
+ */
+function hodnotaProRazeni(v: VysledekDilny, r: Razeni): number | undefined {
+  const c = v.cesty;
+  const m = c?.metriky;
+  if (!c || !m) return undefined;
+  const naklad = (cesta: Cesta) => {
+    const s = c[cesta];
+    return s.ok ? s.nakladNaKus : Number.MAX_VALUE;
+  };
+  switch (r) {
+    case "zisk": return m.zisk;
+    case "marze": return m.marze;
+    case "ziskNaKus": return m.ziskNaKus;
+    case "ziskNaKg": return m.ziskNaKg ?? -Number.MAX_VALUE;
+    case "ziskNaFocus": return m.ziskNaFocus ?? -Number.MAX_VALUE;
+    case "nakladKoupit": return naklad("koupit");
+    case "nakladVyrobit": return naklad("vyrobit");
+    case "nakladEnchant": return naklad("enchantovat");
+    case "trzba": return c.trzba?.trzbaHruba ?? 0;
+    default: return undefined;
+  }
 }
 
 /** Popisek „kde → kam" z konfigurace. */
@@ -86,6 +114,9 @@ export function TabDilna(p: Props) {
       nazev: (v) => v.radek?.nazev
         ?? p.nazevPolozky(v.klic.split("#")[0] ?? "", Number(v.klic.split("#")[1] ?? 0)),
       skupina: (v) => skupinaProKategorii(v.radek?.polozka?.kategorie),
+      // Zisk a řazení z NEJLEVNĚJŠÍ cesty (F12), ne z řádku skenu (výroba).
+      zisk: ziskDilny,
+      hodnota: hodnotaProRazeni,
     }),
     [p.vysledky, filtr, p.nazevPolozky],
   );

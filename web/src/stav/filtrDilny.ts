@@ -41,6 +41,8 @@ export interface PolozkaSeznamu {
 export type Razeni =
   | Metrika | "nazev" | "tier"
   | "naklad" | "trzba" | "likvidita" | "stari"
+  // Dílna (F12): náklad na kus jednotlivých cest.
+  | "nakladKoupit" | "nakladVyrobit" | "nakladEnchant"
   // Jen Refining: vrácení surovin, váha nákupu a úspora vlastní výrobou
   // nižšího tieru. V Dílně tyhle sloupce nejsou, takže je tam `jePlatneRazeni`
   // neuzná a uložená hodnota spadne na výchozí.
@@ -56,6 +58,7 @@ export type Smer = "sestupne" | "vzestupne";
  */
 export function vychoziSmer(r: Razeni): Smer {
   return r === "nazev" || r === "tier" || r === "stari" || r === "naklad"
+    || r === "nakladKoupit" || r === "nakladVyrobit" || r === "nakladEnchant"
     || r === "vahaNakupu"
     ? "vzestupne"
     : "sestupne";
@@ -168,20 +171,33 @@ export interface Doplnky<T extends PolozkaSeznamu = PolozkaSeznamu> {
   hodnota?: (v: T, r: Razeni) => number | undefined;
   /** Hodnota pro filtr navíc — např. „ve kterém městě se to refinuje". */
   extra?: (v: T, klic: string) => string | null;
+  /**
+   * Zisk položky, když ho karta počítá jinak než řádek skenu. Null = bez ceny.
+   *
+   * Vzniklo kvůli Dílně (F12): zisk se tam bere z nejlevnější cesty
+   * (koupit / vyrobit / enchantovat), ne z výroby. Bez háčku by „jen
+   * ziskové" schovalo položku, která je zisková jen přes enchant.
+   * Chybí = zisk z `radek.vysledek` jako dřív (Refining, Příležitosti).
+   */
+  zisk?: (v: T) => number | null;
 }
 
-function maCenu(v: PolozkaSeznamu): boolean {
-  return v.radek?.vysledek != null;
+function maCenu<T extends PolozkaSeznamu>(v: T, d: Doplnky<T>): boolean {
+  return d.zisk ? d.zisk(v) !== null : v.radek?.vysledek != null;
+}
+
+function ziskPolozky<T extends PolozkaSeznamu>(v: T, d: Doplnky<T>): number {
+  return d.zisk ? (d.zisk(v) ?? 0) : (v.radek?.vysledek?.zisk ?? 0);
 }
 
 function projdeFiltrem<T extends PolozkaSeznamu>(
   v: T, f: NastaveniFiltru, d: Doplnky<T>,
 ): boolean {
-  if (f.skrytBezCeny && !maCenu(v)) return false;
+  if (f.skrytBezCeny && !maCenu(v, d)) return false;
 
   // Ztrátové schovat ano — ale položky bez ceny NEJSOU ztrátové, jen neznámé.
   // Kdyby je „jen ziskové" schovávalo, uživatel by nevěděl, že mu chybí data.
-  if (f.jenZiskove && maCenu(v) && (v.radek!.vysledek!.zisk <= 0)) return false;
+  if (f.jenZiskove && maCenu(v, d) && ziskPolozky(v, d) <= 0) return false;
 
   const dotaz = f.hledani.trim().toLowerCase();
   if (dotaz && !d.nazev(v).toLowerCase().includes(dotaz)
@@ -246,8 +262,8 @@ function porovnej<T extends PolozkaSeznamu>(
   // Bez ceny vždy dolů — a to i při obráceném směru. Nula by je zamíchala
   // mezi ztrátové položky a nahoře by bylo to, o čem se neví nic.
   // Obrácení směru na tomhle nic nemění: neznámé patří na konec vždy.
-  const aMa = maCenu(a);
-  const bMa = maCenu(b);
+  const aMa = maCenu(a, d);
+  const bMa = maCenu(b, d);
   if (aMa !== bMa) return aMa ? -1 : 1;
   if (!aMa) return 0;
 

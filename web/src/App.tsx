@@ -801,6 +801,7 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
       {rezim === "dilna" && detailDilna && detailDilna.radek && (
         <DetailPolozky
           radek={detailDilna.radek}
+          cestyDilny={detailDilna.cesty}
           zobrazeneMesto={detailDilna.mesto}
           mistoProdeje={detailDilna.mistoProdeje !== "mesto" ? BLACK_MARKET : undefined}
           server={server}
