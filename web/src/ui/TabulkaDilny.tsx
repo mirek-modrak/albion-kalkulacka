@@ -13,7 +13,7 @@
 import { Fragment, useState } from "react";
 import type { Cesta, StavCesty, TypCeny, VysledekCest } from "@albion/jadro";
 import {
-  AUTO_MESTO, kamSeProdava, konfigProKlic,
+  kamSeProdava, konfigProKlic,
   type KonfigDilny, type StavDilny, type VysledekDilny,
 } from "../stav/dilna";
 import type { RezimCeny } from "../stav/sken";
@@ -25,7 +25,7 @@ import type { DefiniceSloupce, SloupecId } from "../stav/sloupceDilny";
 import { barvaHodnoty, barvaStari, cislo, procenta, seZnamenkem, stari } from "./format";
 import { OdznakLikvidity, ZnackaFantomu } from "./OdznakLikvidity";
 import { PoleCeny } from "./PoleCeny";
-import { NastaveniPolozky, popisKonfigu } from "./TabDilna";
+import { NastaveniPolozky } from "./TabDilna";
 
 interface Props {
   vysledky: VysledekDilny[];
@@ -75,7 +75,8 @@ export function TabulkaDilny(p: Props) {
               <Fragment key={v.klic}>
                 <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50
                                dark:border-slate-800/60 dark:hover:bg-slate-900/40">
-                  <td className="px-3 py-2">
+                  {/* Minimální šířka, ať se název neláme po jednotlivých slovech. */}
+                  <td className="min-w-[13rem] px-3 py-2">
                     <button onClick={() => p.otevritDetail(v.klic)}
                             className="text-left font-medium hover:underline">
                       {nazev}
@@ -141,7 +142,8 @@ function Hlavicka({ sloupec, vpravo, filtr, setFiltr, children }: {
   setFiltr: (f: NastaveniFiltru) => void;
   children: React.ReactNode;
 }) {
-  const trida = `px-3 py-2 ${vpravo ? "text-right" : ""}`;
+  // Hlavičky se nezalamují — „Koupit / ks" na dvou řádcích jen bere výšku.
+  const trida = `whitespace-nowrap px-3 py-2 ${vpravo ? "text-right" : ""}`;
   if (!sloupec) return <th className={trida}>{children}</th>;
 
   const aktivni = filtr.razeni === sloupec;
@@ -175,14 +177,14 @@ function Bunka({ sloupec, vysledek, davka, efektivni, override, rozbaleny,
   // ten nese jen výrobu ze surovin.
   const v = vysledek.cesty?.metriky ?? null;
   const cesty = vysledek.cesty;
-  const trida = `px-3 py-2 ${sloupec.vpravo ? "text-right" : ""}`;
+  // Čísla se nezalamují: „2 434 560" rozdělené na dva řádky se špatně čte.
+  const trida = `whitespace-nowrap px-3 py-2 ${sloupec.vpravo ? "text-right" : ""}`;
   const prazdno = <td className={trida}>—</td>;
 
   switch (sloupec.id as SloupecId) {
     case "kdeKam": {
-      const kdeKam = efektivni.mesto === AUTO_MESTO
-        ? `${vysledek.mesto} → ${efektivni.naBM ? "BM" : "místní"}`
-        : popisKonfigu(efektivni);
+      // V tabulce zkráceně („BM"), plný popis je v rozbaleném nastavení.
+      const kdeKam = `${vysledek.mesto} → ${efektivni.naBM ? "BM" : "místní"}`;
       return (
         <td className={trida}>
           <button onClick={prepniRozbaleni}

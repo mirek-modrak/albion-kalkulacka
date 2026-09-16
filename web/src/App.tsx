@@ -550,8 +550,11 @@ export function App({ uzivatel }: { uzivatel: Uzivatel }) {
     ? refiningVysledky.find((v) => v.klic === detailKlic) ?? null
     : null;
 
+  // Celá šířka obrazovky (Mirek, 2026-09-16): Dílna, Refining i Příležitosti
+  // jsou hlavně tabulky a strop 1400 px je na velkém monitoru smrskl tak,
+  // že nebyly vidět ceny.
   return (
-    <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
+    <div className="w-full p-4 sm:p-6">
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">Albion — kde se nejvíc vydělá</h1>

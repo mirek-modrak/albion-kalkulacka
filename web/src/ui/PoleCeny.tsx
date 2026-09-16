@@ -59,7 +59,9 @@ export function PoleCeny(props: {
         onChange={(e) => { setRozepsane(e.target.value); cekajiciRef.current = e.target.value; }}
         onBlur={dorucit}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm
+        // Minimální šířka: v tabulce vedle tlačítka „ručně ✕" se pole jinak
+        // zmáčklo na pár pixelů a cena nebyla vidět.
+        className="w-full min-w-[6.5rem] rounded-md border border-slate-300 bg-white px-2 py-1 text-sm
                    dark:border-slate-700 dark:bg-slate-950"
       />
       {rucni ? (
